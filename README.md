@@ -1,2 +1,4 @@
 # 24-game-trainer
-Get better at the 24 game.
+solve 24-game, but with any number of inputs and any target number, using {+, -, *, /}
+gives solution, but a little scuffed
+
