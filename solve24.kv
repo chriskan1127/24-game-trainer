@@ -1,0 +1,99 @@
+#kivy 1.0.11
+<OperationPanel>:
+    undo: undo
+    add: add
+    subtract: subtract
+    divide: divide
+    multiply: multiply
+    size_hint: 0.64, 0.14
+    BoxLayout:
+        pos: self.parent.pos
+        size: self.parent.size
+        padding: [0, 20]
+        spacing: 20
+        orientation: 'horizontal'
+        UndoBlock:
+            id: undo
+        OperationBlock:
+            id: add
+            text: '+'
+        OperationBlock:
+            id: subtract
+            text: '-'
+        OperationBlock:
+            id: divide
+            text: '/'
+        OperationBlock:
+            id: multiply
+            text: 'x'
+<NumberPanel>:
+    number1: number1
+    number2: number2
+    number3: number3
+    number4: number4
+    size_hint: 0.64, 0.4
+    FloatLayout:
+        size: self.parent.size
+        pos: self.parent.pos
+        padding: 20
+        id: floatlayout
+        NumberBlock:
+            id: number1
+            size_hint: self.size_hint_value, self.size_hint_value
+            pos_hint: {'center_x': 0.225, 'center_y': 0.225}
+        NumberBlock:
+            id: number2
+            size_hint: self.size_hint_value, self.size_hint_value
+            pos_hint: {'center_x': 0.775, 'center_y': 0.225}
+        NumberBlock:
+            id: number3
+            size_hint: self.size_hint_value, self.size_hint_value
+            pos_hint: {'center_x': 0.225, 'center_y': 0.775}
+        NumberBlock:
+            id: number4
+            size_hint: self.size_hint_value, self.size_hint_value
+            pos_hint: {'center_x': 0.775, 'center_y': 0.775}
+<NumberBlock>:
+    size_hint_value: 0.45
+    background_color: (1, 0, 0, 1)
+    background_normal: ''
+    font_size: 31
+<OperationBlock>:
+    background_color: (1, 0, 0, 1)
+    background_normal: ''
+    font_size: 19
+<UndoBlock>:
+    background_color: (1, 0, 0, 1)
+    background_normal: ''
+    text: 'Undo'
+<Solve24Game>:
+    numberpanel: number
+    operationpanel: operation
+    timelabel: time
+    scorelabel: score
+    targetlabel: target
+    FloatLayout:
+        size: root.width, root.height
+        NumberPanel:
+            id: number
+            pos_hint: {'x': 0.18, 'y': 0.3}
+            #text: int_value 
+        OperationPanel:
+            id: operation
+            pos_hint: {'x': 0.18, 'y': 0.11}
+        Label:
+            id: time
+            font_size: 30 
+            pos_hint: {'center_x': 0.166, 'center_y': 0.92}
+            text: "Time: "
+        Label:
+            id: score
+            font_size: 30
+            pos_hint: {'center_x': 0.833, 'center_y': 0.92}
+        Label:
+            text: "24"
+            id: target
+            font_size: 70
+            pos_hint: {'center_x': 0.5, 'center_y': 0.82}
+            
+       
