@@ -7,25 +7,41 @@ from kivy.vector import Vector
 from kivy.clock import Clock
 from kivy.animation import Animation
 from random import randint 
+from copy import copy
 from kivy.uix.floatlayout import FloatLayout
 
 class Solve24Game(Widget):
+    remaining_nums = BoundedNumericProperty(4, min=0, max=4, errorvalue=4)
     ops = ListProperty([])
     ops_state = OptionProperty("None", options=["Undo", "+", "-", "x", "/", "None"])
-    numberpanel = ObjectProperty(None)
+    previous_numberpanel = ObjectProperty(None)
     operationpanel = ObjectProperty(None)
     timelabel = ObjectProperty(None)
     scorelabel = ObjectProperty(None)
-    targetpanel = ObjectProperty(None)
-    score = NumericProperty(0)
+    targetlabel = ObjectProperty(None)
     
     def start_state(self):
-        self.numberpanel.start()
-        self.operation = "Null"
-        self.scorelabel.text = 'Score: 0'
-    
-    def clear_operation_panel(self):
+        self.main_numberpanel = ObjectProperty(None)
+        self.remaining_nums = 4
+        new_numberpanel = NumberPanel(pos_hint = {'x': 0.18, 'y': 0.3})
+        self.ids.floatlayout.add_widget(new_numberpanel)
+        self.main_numberpanel = new_numberpanel
+        self.previous_numberpanel = self.main_numberpanel
+        self.main_numberpanel.start()
+        self.bind(remaining_nums=finishedgame_callback)
+        self.ops_state = "None"
+        self.operationpanel.operation_id = 'None'
+
+    def clear_operations(self):
         self.operationpanel.ids[self.operationpanel.operation_id].remove_operation()
+
+def finishedgame_callback(instance, value):
+    if value == 1:
+        if instance.main_numberpanel.ids[instance.main_numberpanel.first_operation].int_value == instance.targetlabel.target_number:
+            instance.ops.pop()
+            instance.scorelabel.score_number = instance.scorelabel.score_number + 1
+            instance.ids.floatlayout.remove_widget(instance.main_numberpanel)
+            instance.start_state()
 
 class OperationPanel(Widget):
     operation_id = OptionProperty("None", options=["undo", "add", "subtract", "multiply", "divide", "None"])
@@ -53,6 +69,7 @@ class OperationBlock(Button, Widget):
     def add_operation(self): #adds operation to state
         self.parent.parent.parent.parent.ops_state = self.text
         self.parent.parent.add_op(self) #adds block's id as operation id (operation to be executed)
+        self.activated = True
     
     def on_press(self):
         self.background_color = (0, 1, 0.4, 1)
@@ -61,7 +78,6 @@ class OperationBlock(Button, Widget):
         if self.activated is True:
             self.remove_operation()
         else:
-            self.activated = True
             if len(self.parent.parent.parent.parent.ops) < 1:
                 self.background_color = (1, 0, 0, 1)
             else:
@@ -70,29 +86,47 @@ class OperationBlock(Button, Widget):
                 self.add_operation()
 
 class UndoBlock(Button, Widget):
-    pass
+    def on_press(self):
+        self.background_color = (0, 1, 0.4, 1)
+    
+    def on_release(self):
+        self.background_color = (1, 0, 0, 1)
+        if self.parent.parent.parent.parent.ops_state is not 'None':
+            self.parent.parent.parent.parent.clear_operations()
+        self.parent.parent.parent.parent.ids.floatlayout.remove_widget(self.parent.parent.parent.parent.main_numberpanel)
+        self.parent.parent.parent.parent.main_numberpanel = self.parent.parent.parent.parent.previous_numberpanel
+        self.parent.parent.parent.parent.ids.floatlayout.add_widget(self.parent.parent.parent.parent.main_numberpanel)
+
+#used for binding
+def numberpanel_callback(instance, value):
+        if value == 1:
+            if instance.ids[instance.first_operation].int_value == instance.parent.parent.targetlabel.target_number:
+                instance.parent.parent.scorelabel.score_number = instance.parent.parent.scorelabel.score_number + 1
+                instance.parent.parent.start_state()
 
 class NumberPanel(Widget):
-    remaining_nums = BoundedNumericProperty(0, min=0, max=4, errorvalue=4)
     number1 = ObjectProperty(None)
     number2 = ObjectProperty(None)
     number3 = ObjectProperty(None)
     number4 = ObjectProperty(None)
+    
     first_operation = OptionProperty("None", options=["number1", "number2", "number3", "number4", "None"])
-     
+    
     def add_first_op(self, block_instance):
         for block_id, block in self.ids.items():
             if block == block_instance:
                 self.first_operation = block_id
                 break
-    
+
     def start(self):
         self.number1.generate_value()
         self.number2.generate_value()
         self.number3.generate_value()
         self.number4.generate_value()
+        self.remaining_nums = 4
     
     def compute(self, block_instance):
+        self.parent.parent.previous_numberpanel = self.parent.parent.main_numberpanel
         block_id = self.first_operation
         int1 = self.ids[block_id].int_value
         int2 = block_instance.int_value
@@ -112,10 +146,12 @@ class NumberPanel(Widget):
         anim2 = Animation(size_hint_value = 0.49, duration=0.10) + Animation(size_hint_value = 0.45, duration=0.09)
         anim2.start(block_instance)
         block_instance.adjust_value(output) #change block's number
-        self.first_operation = 'None'
         block_instance.remove_operation()
-        self.parent.parent.clear_operation_panel()
-        self.remaining_nums = self.remaining_nums - 1
+        block_instance.background_color = (0, 1, 0.4, 1)
+        block_instance.add_operation()
+        self.parent.parent.clear_operations()
+        self.parent.parent.remaining_nums = self.parent.parent.remaining_nums - 1
+        
 
 class NumberBlock(Button, Widget):
     int_value = NumericProperty(0)
@@ -130,6 +166,7 @@ class NumberBlock(Button, Widget):
     def add_operation(self):
         self.parent.parent.parent.parent.ops.append(self.int_value)
         self.parent.parent.add_first_op(self)
+        self.activated = True
     
     def generate_value(self):
         value = randint(1, 13)
@@ -149,7 +186,6 @@ class NumberBlock(Button, Widget):
         if self.activated is True:
             self.remove_operation()
         else:
-            self.activated = True
             if len(self.parent.parent.parent.parent.ops) < 1:
                 self.add_operation()
             elif self.parent.parent.parent.parent.ops_state == 'None':
@@ -157,8 +193,6 @@ class NumberBlock(Button, Widget):
                 self.add_operation()
             else:
                 self.parent.parent.compute(self)
-
-        
 
 class Solve24App(App):
     def build(self):

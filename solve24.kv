@@ -67,17 +67,13 @@
     background_normal: ''
     text: 'Undo'
 <Solve24Game>:
-    numberpanel: number
     operationpanel: operation
     timelabel: time
     scorelabel: score
     targetlabel: target
     FloatLayout:
+        id: floatlayout
         size: root.width, root.height
-        NumberPanel:
-            id: number
-            pos_hint: {'x': 0.18, 'y': 0.3}
-            #text: int_value 
         OperationPanel:
             id: operation
             pos_hint: {'x': 0.18, 'y': 0.11}
@@ -87,11 +83,14 @@
             pos_hint: {'center_x': 0.166, 'center_y': 0.92}
             text: "Time: "
         Label:
+            score_number: 0
             id: score
+            text: "Score: " + str(self.score_number)
             font_size: 30
             pos_hint: {'center_x': 0.833, 'center_y': 0.92}
         Label:
-            text: "24"
+            target_number: 24
+            text: str(self.target_number)
             id: target
             font_size: 70
             pos_hint: {'center_x': 0.5, 'center_y': 0.82}
