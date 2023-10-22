@@ -304,7 +304,7 @@ private:
 
 int main(){
     //get all solutions by running find_first_solution on all combinations
-    vector<int> test{16, 9, 6, 4};
+    vector<int> test = {1, 3, 4, 6};
     double practice_target = 36;
     Solution stupid(test, practice_target);
     //int donkey = stupid.find_first_solution() ? 1: 0;

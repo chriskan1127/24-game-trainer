@@ -12,6 +12,7 @@ from kivy.uix.floatlayout import FloatLayout
 
 class Solve24Game(Widget):
     remaining_nums = BoundedNumericProperty(4, min=0, max=4, errorvalue=4)
+    time_passed = BoundedNumericProperty(0, min=0, max=30, errorvalue=30)
     ops = ListProperty([])
     ops_state = OptionProperty("None", options=["Undo", "+", "-", "x", "/", "None"])
     previous_numberpanel = ObjectProperty(None)
@@ -20,28 +21,44 @@ class Solve24Game(Widget):
     scorelabel = ObjectProperty(None)
     targetlabel = ObjectProperty(None)
     
+    def timer_tick(self, dt=None):
+        self.time_passed = self.time_passed + 1
+        self.timelabel.time_remaining = self.timelabel.time_remaining - 1
+
     def start_state(self):
         self.main_numberpanel = ObjectProperty(None)
         self.remaining_nums = 4
         new_numberpanel = NumberPanel(pos_hint = {'x': 0.18, 'y': 0.3})
         self.ids.floatlayout.add_widget(new_numberpanel)
+        self.time_passed = 0
+        self.timelabel.time_remaining = self.time_duration
         self.main_numberpanel = new_numberpanel
         self.previous_numberpanel = self.main_numberpanel
         self.main_numberpanel.start()
-        self.bind(remaining_nums=finishedgame_callback)
+        self.bind(remaining_nums=self.finishedgame_callback)
+        self.bind(time_passed=self.out_of_time)
         self.ops_state = "None"
+        if len(self.ops) > 0:
+            self.ops.pop()
         self.operationpanel.operation_id = 'None'
+    
+    def out_of_time(self, instance, value):
+        if value == self.time_duration:
+            #self.ops.pop()
+            self.scorelabel.score_number = 0
+            self.ids.floatlayout.remove_widget(self.main_numberpanel)
+            self.start_state()
 
     def clear_operations(self):
         self.operationpanel.ids[self.operationpanel.operation_id].remove_operation()
-
-def finishedgame_callback(instance, value):
-    if value == 1:
-        if instance.main_numberpanel.ids[instance.main_numberpanel.first_operation].int_value == instance.targetlabel.target_number:
-            instance.ops.pop()
-            instance.scorelabel.score_number = instance.scorelabel.score_number + 1
-            instance.ids.floatlayout.remove_widget(instance.main_numberpanel)
-            instance.start_state()
+    
+    def finishedgame_callback(self, instance, value):
+        if value == 1:
+            if self.main_numberpanel.ids[self.main_numberpanel.first_operation].int_value == self.targetlabel.target_number:
+                #self.ops.pop()
+                self.scorelabel.score_number = self.scorelabel.score_number + 1
+                self.ids.floatlayout.remove_widget(self.main_numberpanel)
+                self.start_state()
 
 class OperationPanel(Widget):
     operation_id = OptionProperty("None", options=["undo", "add", "subtract", "multiply", "divide", "None"])
@@ -198,6 +215,7 @@ class Solve24App(App):
     def build(self):
         game = Solve24Game()
         game.start_state()
+        Clock.schedule_interval(game.timer_tick, 1)
         return game
     
 if __name__ == '__main__':

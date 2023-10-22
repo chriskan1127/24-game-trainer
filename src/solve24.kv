@@ -71,6 +71,7 @@
     timelabel: time
     scorelabel: score
     targetlabel: target
+    time_duration: 30
     FloatLayout:
         id: floatlayout
         size: root.width, root.height
@@ -78,10 +79,11 @@
             id: operation
             pos_hint: {'x': 0.18, 'y': 0.11}
         Label:
+            time_remaining: 0
             id: time
             font_size: 30 
             pos_hint: {'center_x': 0.166, 'center_y': 0.92}
-            text: "Time: "
+            text: "Time: " + str(self.time_remaining)
         Label:
             score_number: 0
             id: score
