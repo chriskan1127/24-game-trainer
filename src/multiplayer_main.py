@@ -11,6 +11,12 @@ from copy import copy
 from kivy.uix.floatlayout import FloatLayout
 import sys # Add sys import for path manipulation
 import os # Add os import for path manipulation
+import json
+import asyncio
+import threading
+import websockets
+import requests
+from typing import Dict, List, Optional, Any
 
 # Add lib directory to Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -19,6 +25,10 @@ if lib_dir not in sys.path:
     sys.path.insert(0, lib_dir)
 
 from solve_24 import Solution # Import the Python Solution class
+
+# Configuration
+SERVER_BASE_URL = "http://localhost:8000"
+WS_BASE_URL = "ws://localhost:8000"
 
 # Color palette for modern, accessible design
 COLORS = {
@@ -30,31 +40,257 @@ COLORS = {
     'disabled': (0.8, 0.8, 0.8, 1),       # Light gray for disabled
 }
 
-class StartScreen(Widget):
-    def start_game(self):
-        # Get the main app and switch to game screen
-        app = App.get_running_app()
-        app.root.show_game()
+class WebSocketClient:
+    """Handles WebSocket communication with the game server"""
+    
+    def __init__(self, game_code: str, player_id: str, message_handler):
+        self.game_code = game_code
+        self.player_id = player_id
+        self.message_handler = message_handler
+        self.websocket = None
+        self.connected = False
+        self.running = False
+        
+    async def connect(self):
+        """Connect to the WebSocket server"""
+        try:
+            uri = f"{WS_BASE_URL}/ws/{self.game_code}/{self.player_id}"
+            self.websocket = await websockets.connect(uri)
+            self.connected = True
+            self.running = True
+            
+            # Listen for messages
+            while self.running:
+                try:
+                    message = await self.websocket.recv()
+                    data = json.loads(message)
+                    Clock.schedule_once(lambda dt: self.message_handler(data), 0)
+                except websockets.exceptions.ConnectionClosed:
+                    break
+                except Exception as e:
+                    print(f"WebSocket error: {e}")
+                    break
+                    
+        except Exception as e:
+            print(f"Failed to connect to WebSocket: {e}")
+            Clock.schedule_once(lambda dt: self.message_handler({
+                "type": "error",
+                "message": f"Failed to connect: {e}"
+            }), 0)
+            
+    async def send_message(self, message: dict):
+        """Send a message to the server"""
+        if self.websocket and self.connected:
+            try:
+                await self.websocket.send(json.dumps(message))
+            except Exception as e:
+                print(f"Failed to send message: {e}")
+                
+    def disconnect(self):
+        """Disconnect from the server"""
+        self.running = False
+        self.connected = False
+            
+    def start_connection(self):
+        """Start the WebSocket connection in a separate thread"""
+        def run_async():
+            asyncio.run(self.connect())
+            
+        thread = threading.Thread(target=run_async)
+        thread.daemon = True
+        thread.start()
 
-class GameOverScreen(Widget):
-    score_text = ObjectProperty(None)
-    numbers_text = ObjectProperty(None)
-    solution_text = ObjectProperty(None)
+class MenuScreen(Widget):
+    def create_game(self, player_name: str):
+        """Create a new game on the server"""
+        if not player_name.strip():
+            self.show_status("Please enter your name")
+            return
+            
+        try:
+            response = requests.post(
+                f"{SERVER_BASE_URL}/api/games/create",
+                json={
+                    "host_username": player_name.strip(),
+                    "target": 24,
+                    "time_limit": 30,
+                    "max_players": 10,
+                    "points_to_win": 10
+                },
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success"):
+                    game_code = data["data"]["game_code"]
+                    host_id = data["data"]["host_id"]
+                    app = App.get_running_app()
+                    app.root.show_lobby(game_code, player_name.strip(), host_id, is_host=True)
+                else:
+                    self.show_status(data.get("message", "Failed to create game"))
+            else:
+                error_msg = response.json().get("detail", "Failed to create game")
+                self.show_status(error_msg)
+                
+        except Exception as e:
+            self.show_status(f"Connection error: {e}")
     
-    def restart_game(self):
-        # Get the main app and restart
+    def join_game(self, game_code: str, player_name: str):
+        """Join an existing game"""
+        if not game_code.strip() or not player_name.strip():
+            self.show_status("Please enter both game code and name")
+            return
+            
+        try:
+            response = requests.post(
+                f"{SERVER_BASE_URL}/api/games/{game_code.upper()}/join",
+                json={"username": player_name.strip()},
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success"):
+                    player_id = data["data"]["player_id"]
+                    app = App.get_running_app()
+                    app.root.show_lobby(game_code.upper(), player_name.strip(), player_id, is_host=False)
+                else:
+                    self.show_status(data.get("message", "Failed to join game"))
+            else:
+                error_msg = response.json().get("detail", "Failed to join game")
+                self.show_status(error_msg)
+                
+        except Exception as e:
+            self.show_status(f"Connection error: {e}")
+    
+    def show_status(self, message: str):
+        """Show a status message to the user"""
+        if hasattr(self, 'ids') and 'status_label' in self.ids:
+            self.ids.status_label.text = message
+
+class LobbyScreen(Widget):
+    game_code = StringProperty('')
+    
+    def __init__(self, game_code: str, player_name: str, player_id: str, is_host: bool = False, **kwargs):
+        super().__init__(**kwargs)
+        self.game_code = game_code
+        self.player_name = player_name
+        self.player_id = player_id
+        self.is_host = is_host
+        self.ws_client = None
+        self.players = []
+        
+        # Connect to WebSocket
+        Clock.schedule_once(self.connect_websocket, 0.1)
+        
+    def connect_websocket(self, dt):
+        """Connect to the WebSocket server"""
+        self.ws_client = WebSocketClient(
+            self.game_code, 
+            self.player_id, 
+            self.handle_websocket_message
+        )
+        self.ws_client.start_connection()
+        
+    def handle_websocket_message(self, data: dict):
+        """Handle incoming WebSocket messages"""
+        msg_type = data.get("type")
+        
+        if msg_type == "game_state":
+            self.update_game_state(data.get("game", {}))
+        elif msg_type == "game_started":
+            self.start_game_with_data(data.get("game", {}))
+        elif msg_type == "error":
+            self.show_status(data.get("message", "Unknown error"))
+        elif msg_type == "player_ready_changed":
+            # Refresh game state when player ready status changes
+            self.refresh_game_state()
+            
+    def refresh_game_state(self):
+        """Refresh game state from server"""
+        try:
+            response = requests.get(
+                f"{SERVER_BASE_URL}/api/games/{self.game_code}/status",
+                timeout=5
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success"):
+                    self.update_game_state(data["data"]["game"])
+        except Exception as e:
+            print(f"Failed to refresh game state: {e}")
+            
+    def update_game_state(self, game_data: dict):
+        """Update the lobby with current game state"""
+        self.players = game_data.get("players", [])
+        
+        # Update players list
+        if hasattr(self, 'ids') and 'players_list' in self.ids:
+            self.ids.players_list.clear_widgets()
+            for player in self.players:
+                from kivy.uix.label import Label
+                status_text = " (Host)" if player.get("is_host") else ""
+                ready_text = " - Ready" if player.get("is_ready") else " - Not Ready"
+                player_label = Label(
+                    text=f"{player['username']}{status_text} - Score: {player.get('score', 0)}{ready_text}",
+                    size_hint_y=None,
+                    height=40,
+                    color=(0.2, 0.2, 0.3, 1),
+                    font_size=16
+                )
+                self.ids.players_list.add_widget(player_label)
+        
+        # Update start button (only show for host, and only if enough players)
+        if hasattr(self, 'ids') and 'start_button' in self.ids:
+            can_start = (self.is_host and 
+                        len(self.players) >= 2 and 
+                        game_data.get("status") == "waiting")
+            self.ids.start_button.disabled = not can_start
+            if not self.is_host:
+                self.ids.start_button.text = "Waiting for host..."
+                self.ids.start_button.disabled = True
+            
+    def start_game(self):
+        """Start the game (host only)"""
+        if self.is_host and self.ws_client:
+            try:
+                response = requests.post(
+                    f"{SERVER_BASE_URL}/api/games/{self.game_code}/start",
+                    params={"player_id": self.player_id},
+                    timeout=5
+                )
+                if response.status_code != 200:
+                    error_msg = response.json().get("detail", "Failed to start game")
+                    self.show_status(error_msg)
+            except Exception as e:
+                self.show_status(f"Failed to start game: {e}")
+            
+    def start_game_with_data(self, game_data: dict):
+        """Start a game round with the given game data"""
+        current_round = game_data.get("current_round", {})
+        numbers = current_round.get("numbers", [1, 2, 3, 4])
+        round_num = current_round.get("round_number", 1)
+        
         app = App.get_running_app()
-        app.root.show_start_screen()
-    
-    def set_game_over_data(self, score, numbers, solution_text):
-        self.score_text.text = f"Final Score: {score}"
-        self.numbers_text.text = f"Numbers: {', '.join(map(str, numbers))}"
-        self.solution_text.text = solution_text
+        app.root.show_game(self.game_code, self.player_name, self.player_id, numbers, round_num, self.ws_client)
+            
+    def leave_game(self):
+        """Leave the current game"""
+        if self.ws_client:
+            self.ws_client.disconnect()
+        app = App.get_running_app()
+        app.root.show_menu()
+        
+    def show_status(self, message: str):
+        """Show a status message"""
+        if hasattr(self, 'ids') and 'status_label' in self.ids:
+            self.ids.status_label.text = message
 
 #Note about the code: For Numberpanel and OperationPanel, the floatlayout is within the widget. 
 #Thus, use self.parent.parent to access outermost layer
 
-class Solve24Game(Widget):
+class MultiplayerGameScreen(Widget):
     remaining_nums = BoundedNumericProperty(4, min=0, max=4, errorvalue=4)
     time_passed = BoundedNumericProperty(0, min=0, max=30, errorvalue=30)
     ops = ListProperty([])
@@ -63,12 +299,22 @@ class Solve24Game(Widget):
     timelabel = ObjectProperty(None)
     scorelabel = ObjectProperty(None)
     targetlabel = ObjectProperty(None)
+    round_num = NumericProperty(1)
     
-    def __init__(self, **kwargs):
+    def __init__(self, game_code: str, player_name: str, player_id: str, numbers: list,
+                 round_num: int, ws_client: WebSocketClient, **kwargs):
         super().__init__(**kwargs)
+        self.game_code = game_code
+        self.player_name = player_name
+        self.player_id = player_id
+        self.current_numbers = numbers
+        self.round_num = round_num
+        self.ws_client = ws_client
         self.solver = None
         self.time_duration = 30
-        self.current_numbers = []
+        
+        # Listen for WebSocket messages
+        self.ws_client.message_handler = self.handle_websocket_message
     
     def format_solution(self, solution_steps):
         """Format the solution steps into human-readable text"""
@@ -153,36 +399,34 @@ class Solve24Game(Widget):
         self.main_numberpanel = ObjectProperty(None)
         new_numberpanel = NumberPanel(pos_hint = {'x': 0.18, 'y': 0.3})
         
-        # Generate valid numbers that can form 24
-        while True:
-            numbers = [randint(1, 13) for _ in range(4)]
-            if self.validate_numbers(numbers):
-                break
-        
-        self.current_numbers = numbers  # Store current numbers for game over screen
         self.ids.floatlayout.add_widget(new_numberpanel)
         self.main_numberpanel = new_numberpanel
         self.time_passed = 0
         self.timelabel.time_remaining = self.time_duration
-        self.main_numberpanel.start(numbers)  # Pass the valid numbers
+        self.main_numberpanel.start(self.current_numbers)  # Pass the valid numbers
         self.bind(remaining_nums=self.finishedgame_callback)
         self.bind(time_passed=self.out_of_time)
         self.ops_state = "None"
         if len(self.ops) > 0:
             self.ops.pop()
         self.operationpanel.operation_id = 'None'
+        Clock.schedule_interval(self.timer_tick, 1)
     
     def out_of_time(self, instance, value):
         if value == self.time_duration:
             # Show game over screen instead of restarting immediately
-            app = App.get_running_app()
-            score = self.scorelabel.score_number
+            Clock.unschedule(self.timer_tick)
             
             # Get the solution for current numbers
             solution_steps = self.get_best_solution(self.current_numbers)
             solution_text = self.format_solution(solution_steps)
             
-            app.root.show_game_over(score, self.current_numbers, solution_text)
+            # Notify server of timeout
+            if self.ws_client:
+                asyncio.create_task(self.ws_client.send_message({
+                    "type": "solution_submitted",
+                    "solution": solution_text
+                }))
 
     def clear_operations(self):
         self.operationpanel.ids[self.operationpanel.operation_id].remove_operation()
@@ -190,10 +434,57 @@ class Solve24Game(Widget):
     def finishedgame_callback(self, instance, value):
         if value == 1:
             if self.main_numberpanel.ids[self.main_numberpanel.first_operation].int_value == self.targetlabel.target_number:
-                #self.ops.pop()
-                self.scorelabel.score_number = self.scorelabel.score_number + 1
-                self.ids.floatlayout.remove_widget(self.main_numberpanel)
-                self.start_state()
+                Clock.unschedule(self.timer_tick)
+                
+                # Send solution to server
+                if self.ws_client:
+                    asyncio.create_task(self.ws_client.send_message({
+                        "type": "solution_submitted",
+                        "solution": ["Player solved it manually"]
+                    }))
+                    
+    def handle_websocket_message(self, data: dict):
+        """Handle WebSocket messages during gameplay"""
+        msg_type = data.get("type")
+        
+        if msg_type == "solution_response":
+            if data.get("is_winner"):
+                self.update_display("You won this round!")
+            Clock.schedule_once(lambda dt: self.return_to_lobby(), 3)
+        elif msg_type == "player_answered":
+            player_name = data.get("username", "Someone")
+            if data.get("is_winner"):
+                self.update_display(f"{player_name} won this round!")
+                Clock.schedule_once(lambda dt: self.return_to_lobby(), 3)
+        elif msg_type == "round_ended":
+            Clock.unschedule(self.timer_tick)
+            winner = data.get("winner")
+            if winner:
+                self.update_display(f"{winner} won this round!")
+            # Return to lobby after delay
+            Clock.schedule_once(lambda dt: self.return_to_lobby(), 3)
+        elif msg_type == "game_finished":
+            Clock.unschedule(self.timer_tick)
+            Clock.schedule_once(lambda dt: self.return_to_lobby(), 5)
+        elif msg_type == "game_state":
+            self.update_scores(data.get("game", {}))
+            
+    def update_scores(self, game_data: dict):
+        """Update player scores display"""
+        players = game_data.get("players", [])
+        if players and hasattr(self, 'ids') and 'players_score_label' in self.ids:
+            score_text = "Players: " + ", ".join([f"{p['username']}: {p.get('score', 0)}" for p in players])
+            self.ids.players_score_label.text = score_text
+            
+    def update_display(self, message: str):
+        """Update the display with a message"""
+        if hasattr(self, 'ids') and 'players_score_label' in self.ids:
+            self.ids.players_score_label.text = message
+            
+    def return_to_lobby(self):
+        """Return to the lobby"""
+        app = App.get_running_app()
+        app.root.show_lobby(self.game_code, self.player_name, self.player_id, is_host=False)
 
 class OperationPanel(Widget):
     operation_id = OptionProperty("None", options=["undo", "add", "subtract", "multiply", "divide", "None"])
@@ -427,37 +718,37 @@ class NumberBlock(Button, Widget):
                     # Perform computation, color will be set by compute method
                     self.parent.parent.compute(self)
 
-class Solve24App(App):
-    def build(self):
-        return MainContainer()
-
 class MainContainer(FloatLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.start_screen = None
-        self.game_screen = None
-        self.game_over_screen = None
-        self.show_start_screen()
+        self.show_menu()
     
-    def show_start_screen(self):
+    def show_menu(self):
         self.clear_widgets()
-        self.start_screen = StartScreen()
-        self.add_widget(self.start_screen)
+        self.add_widget(MenuScreen())
     
-    def show_game(self):
+    def show_lobby(self, game_code: str, player_name: str, player_id: str, is_host: bool = False):
         self.clear_widgets()
-        self.game_screen = Solve24Game()
-        self.add_widget(self.game_screen)
-        self.game_screen.start_state()
-        Clock.schedule_interval(self.game_screen.timer_tick, 1)
+        self.add_widget(LobbyScreen(game_code, player_name, player_id, is_host))
     
-    def show_game_over(self, score, numbers, solution_text):
-        if hasattr(self, 'game_screen') and self.game_screen:
-            Clock.unschedule(self.game_screen.timer_tick)
+    def show_game(self, game_code: str, player_name: str, player_id: str, numbers: list, 
+                 round_num: int, ws_client: WebSocketClient):
         self.clear_widgets()
-        self.game_over_screen = GameOverScreen()
-        self.game_over_screen.set_game_over_data(score, numbers, solution_text)
-        self.add_widget(self.game_over_screen)
-    
+        game_screen = MultiplayerGameScreen(game_code, player_name, player_id, numbers, round_num, ws_client)
+        self.add_widget(game_screen)
+        game_screen.start_state()
+
+class Multiplayer24App(App):
+    def build(self):
+        # Load the multiplayer.kv file explicitly
+        from kivy.lang import Builder
+        Builder.load_file('src/multiplayer.kv')
+        return MainContainer()
+        
+    def on_stop(self):
+        for widget in self.root.walk():
+            if hasattr(widget, 'ws_client') and widget.ws_client:
+                widget.ws_client.disconnect()
+
 if __name__ == '__main__':
-    Solve24App().run()
+    Multiplayer24App().run() 

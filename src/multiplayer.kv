@@ -1,0 +1,381 @@
+#:kivy 1.0
+
+<MenuScreen>:
+    canvas.before:
+        Color:
+            rgba: 0.95, 0.97, 1, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    FloatLayout:
+        size: root.width, root.height
+        pos: root.pos
+        Label:
+            text: "24 Game Multiplayer"
+            font_size: min(56, max(32, root.width * 0.06))
+            font_name: 'Roboto'
+            bold: True
+            color: 0.2, 0.2, 0.3, 1
+            pos_hint: {'center_x': 0.5, 'center_y': 0.8}
+        Label:
+            text: "Compete against other players in real-time to solve 24-game puzzles!"
+            font_size: min(18, max(12, root.width * 0.018))
+            font_name: 'Roboto'
+            color: 0.5, 0.5, 0.6, 1
+            pos_hint: {'center_x': 0.5, 'center_y': 0.7}
+            text_size: root.width * 0.8, None
+            halign: 'center'
+        TextInput:
+            id: player_name
+            hint_text: 'Enter your name'
+            multiline: False
+            size_hint: min(0.4, max(0.25, root.width * 0.0004)), min(0.08, max(0.05, root.height * 0.00008))
+            pos_hint: {'center_x': 0.5, 'center_y': 0.55}
+            font_size: min(18, max(14, root.width * 0.018))
+            background_color: 0.98, 0.98, 0.99, 1
+            background_normal: ''
+            padding: [10, 10]
+        TextInput:
+            id: game_code
+            hint_text: 'Enter game code (to join)'
+            multiline: False
+            size_hint: min(0.4, max(0.25, root.width * 0.0004)), min(0.08, max(0.05, root.height * 0.00008))
+            pos_hint: {'center_x': 0.5, 'center_y': 0.45}
+            font_size: min(18, max(14, root.width * 0.018))
+            background_color: 0.98, 0.98, 0.99, 1
+            background_normal: ''
+            padding: [10, 10]
+        Button:
+            text: "Create Game"
+            font_size: min(24, max(18, root.width * 0.025))
+            font_name: 'Roboto'
+            bold: True
+            size_hint: min(0.35, max(0.22, root.width * 0.00035)), min(0.08, max(0.05, root.height * 0.00008))
+            pos_hint: {'center_x': 0.35, 'center_y': 0.3}
+            background_color: 0.3, 0.6, 0.9, 1
+            background_normal: ''
+            color: 1, 1, 1, 1
+            on_press: self.background_color = (0.2, 0.5, 0.8, 1); self.size_hint = (min(0.33, max(0.2, root.width * 0.00033)), min(0.075, max(0.047, root.height * 0.000075)))
+            on_release: self.background_color = (0.3, 0.6, 0.9, 1); self.size_hint = (min(0.35, max(0.22, root.width * 0.00035)), min(0.08, max(0.05, root.height * 0.00008))); root.create_game(player_name.text)
+            canvas.before:
+                Color:
+                    rgba: 0, 0, 0, 0.1
+                RoundedRectangle:
+                    pos: self.x + 2, self.y - 2
+                    size: self.width, self.height
+                    radius: [8]
+                Color:
+                    rgba: self.background_color
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [8]
+        Button:
+            text: "Join Game"
+            font_size: min(24, max(18, root.width * 0.025))
+            font_name: 'Roboto'
+            bold: True
+            size_hint: min(0.35, max(0.22, root.width * 0.00035)), min(0.08, max(0.05, root.height * 0.00008))
+            pos_hint: {'center_x': 0.65, 'center_y': 0.3}
+            background_color: 0.2, 0.7, 0.4, 1
+            background_normal: ''
+            color: 1, 1, 1, 1
+            on_press: self.background_color = (0.15, 0.6, 0.3, 1); self.size_hint = (min(0.33, max(0.2, root.width * 0.00033)), min(0.075, max(0.047, root.height * 0.000075)))
+            on_release: self.background_color = (0.2, 0.7, 0.4, 1); self.size_hint = (min(0.35, max(0.22, root.width * 0.00035)), min(0.08, max(0.05, root.height * 0.00008))); root.join_game(game_code.text, player_name.text)
+            canvas.before:
+                Color:
+                    rgba: 0, 0, 0, 0.1
+                RoundedRectangle:
+                    pos: self.x + 2, self.y - 2
+                    size: self.width, self.height
+                    radius: [8]
+                Color:
+                    rgba: self.background_color
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [8]
+        Label:
+            id: status_label
+            text: ''
+            font_size: min(18, max(14, root.width * 0.018))
+            font_name: 'Roboto'
+            color: 0.8, 0.3, 0.3, 1
+            pos_hint: {'center_x': 0.5, 'center_y': 0.15}
+
+<LobbyScreen>:
+    canvas.before:
+        Color:
+            rgba: 0.95, 0.97, 1, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    FloatLayout:
+        size: root.width, root.height
+        pos: root.pos
+        Label:
+            text: f"Game Code: {root.game_code}"
+            font_size: min(48, max(28, root.width * 0.05))
+            font_name: 'Roboto'
+            bold: True
+            color: 0.2, 0.2, 0.3, 1
+            pos_hint: {'center_x': 0.5, 'center_y': 0.85}
+        Label:
+            text: "Players:"
+            font_size: min(24, max(18, root.width * 0.025))
+            font_name: 'Roboto'
+            bold: True
+            color: 0.2, 0.2, 0.3, 1
+            pos_hint: {'center_x': 0.5, 'center_y': 0.75}
+        ScrollView:
+            size_hint: 0.6, 0.4
+            pos_hint: {'center_x': 0.5, 'center_y': 0.55}
+            GridLayout:
+                id: players_list
+                cols: 1
+                size_hint_y: None
+                height: self.minimum_height
+                spacing: 10
+                padding: [20, 10]
+        Button:
+            id: start_button
+            text: "Start Game"
+            font_size: min(24, max(18, root.width * 0.025))
+            font_name: 'Roboto'
+            bold: True
+            size_hint: min(0.3, max(0.2, root.width * 0.0003)), min(0.08, max(0.05, root.height * 0.00008))
+            pos_hint: {'center_x': 0.35, 'center_y': 0.2}
+            background_color: 0.2, 0.7, 0.4, 1
+            background_normal: ''
+            color: 1, 1, 1, 1
+            disabled: True
+            on_press: self.background_color = (0.15, 0.6, 0.3, 1) if not self.disabled else (0.8, 0.8, 0.8, 1); self.size_hint = (min(0.28, max(0.18, root.width * 0.00028)), min(0.075, max(0.047, root.height * 0.000075))) if not self.disabled else self.size_hint
+            on_release: self.background_color = (0.2, 0.7, 0.4, 1) if not self.disabled else (0.8, 0.8, 0.8, 1); self.size_hint = (min(0.3, max(0.2, root.width * 0.0003)), min(0.08, max(0.05, root.height * 0.00008))) if not self.disabled else self.size_hint; root.start_game() if not self.disabled else None
+            canvas.before:
+                Color:
+                    rgba: 0, 0, 0, 0.1 if not self.disabled else 0.05
+                RoundedRectangle:
+                    pos: self.x + 2, self.y - 2
+                    size: self.width, self.height
+                    radius: [8]
+                Color:
+                    rgba: self.background_color if not self.disabled else (0.8, 0.8, 0.8, 1)
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [8]
+        Button:
+            text: "Leave Game"
+            font_size: min(24, max(18, root.width * 0.025))
+            font_name: 'Roboto'
+            bold: True
+            size_hint: min(0.3, max(0.2, root.width * 0.0003)), min(0.08, max(0.05, root.height * 0.00008))
+            pos_hint: {'center_x': 0.65, 'center_y': 0.2}
+            background_color: 0.9, 0.3, 0.3, 1
+            background_normal: ''
+            color: 1, 1, 1, 1
+            on_press: self.background_color = (0.8, 0.2, 0.2, 1); self.size_hint = (min(0.28, max(0.18, root.width * 0.00028)), min(0.075, max(0.047, root.height * 0.000075)))
+            on_release: self.background_color = (0.9, 0.3, 0.3, 1); self.size_hint = (min(0.3, max(0.2, root.width * 0.0003)), min(0.08, max(0.05, root.height * 0.00008))); root.leave_game()
+            canvas.before:
+                Color:
+                    rgba: 0, 0, 0, 0.1
+                RoundedRectangle:
+                    pos: self.x + 2, self.y - 2
+                    size: self.width, self.height
+                    radius: [8]
+                Color:
+                    rgba: self.background_color
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [8]
+        Label:
+            id: status_label
+            text: ''
+            font_size: min(18, max(14, root.width * 0.018))
+            font_name: 'Roboto'
+            color: 0.8, 0.3, 0.3, 1
+            pos_hint: {'center_x': 0.5, 'center_y': 0.05}
+
+<MultiplayerGameScreen>:
+    operationpanel: operation
+    timelabel: time
+    scorelabel: score
+    targetlabel: target
+    time_duration: 30
+    canvas.before:
+        Color:
+            rgba: 1, 1, 1, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    FloatLayout:
+        id: floatlayout
+        size: root.width, root.height
+        OperationPanel:
+            id: operation
+            pos_hint: {'x': 0.18, 'y': 0.11}
+        Label:
+            time_remaining: 30
+            id: time
+            font_size: min(24, max(16, root.width * 0.025))
+            font_name: 'Roboto'
+            bold: True
+            color: 0.2, 0.2, 0.3, 1
+            pos_hint: {'center_x': 0.166, 'center_y': 0.92}
+            text: "Time: " + str(self.time_remaining)
+        Label:
+            score_number: 0
+            id: score
+            text: "Score: " + str(self.score_number)
+            font_size: min(24, max(16, root.width * 0.025))
+            font_name: 'Roboto'
+            bold: True
+            color: 0.2, 0.2, 0.3, 1
+            pos_hint: {'center_x': 0.833, 'center_y': 0.92}
+        Label:
+            target_number: 24
+            text: str(self.target_number)
+            id: target
+            font_size: min(80, max(60, root.width * 0.08))
+            font_name: 'Roboto'
+            bold: True
+            color: 0.3, 0.6, 0.9, 1
+            pos_hint: {'center_x': 0.5, 'center_y': 0.82}
+        Label:
+            id: round_label
+            text: f"Round {root.round_num}"
+            font_size: min(20, max(14, root.width * 0.02))
+            font_name: 'Roboto'
+            bold: True
+            color: 0.5, 0.5, 0.6, 1
+            pos_hint: {'center_x': 0.5, 'center_y': 0.05}
+        Label:
+            id: players_score_label
+            text: "Players: "
+            font_size: min(16, max(12, root.width * 0.016))
+            font_name: 'Roboto'
+            color: 0.5, 0.5, 0.6, 1
+            pos_hint: {'center_x': 0.5, 'center_y': 0.02}
+
+<OperationPanel>:
+    undo: undo
+    add: add
+    subtract: subtract
+    divide: divide
+    multiply: multiply
+    size_hint: 0.64, 0.14
+    BoxLayout:
+        pos: self.parent.pos
+        size: self.parent.size
+        padding: [10, 15]
+        spacing: 15
+        orientation: 'horizontal'
+        UndoBlock:
+            id: undo
+        OperationBlock:
+            id: add
+            text: '+'
+        OperationBlock:
+            id: subtract
+            text: '-'
+        OperationBlock:
+            id: divide
+            text: '/'
+        OperationBlock:
+            id: multiply
+            text: 'x'
+
+<NumberPanel>:
+    number1: number1
+    number2: number2
+    number3: number3
+    number4: number4
+    size_hint: 0.64, 0.4
+    FloatLayout:
+        size: self.parent.size
+        pos: self.parent.pos
+        padding: 20
+        id: floatlayout
+        NumberBlock:
+            id: number1
+            size_hint: self.size_hint_value, self.size_hint_value
+            pos_hint: {'center_x': 0.225, 'center_y': 0.225}
+        NumberBlock:
+            id: number2
+            size_hint: self.size_hint_value, self.size_hint_value
+            pos_hint: {'center_x': 0.775, 'center_y': 0.225}
+        NumberBlock:
+            id: number3
+            size_hint: self.size_hint_value, self.size_hint_value
+            pos_hint: {'center_x': 0.225, 'center_y': 0.775}
+        NumberBlock:
+            id: number4
+            size_hint: self.size_hint_value, self.size_hint_value
+            pos_hint: {'center_x': 0.775, 'center_y': 0.775}
+
+<NumberBlock>:
+    size_hint_value: 0.45
+    background_color: 0.98, 0.98, 0.99, 1
+    background_normal: ''
+    font_size: 32
+    font_name: 'Roboto'
+    bold: True
+    color: 0.2, 0.2, 0.3, 1
+    border: (2, 2, 2, 2)
+    canvas.before:
+        Color:
+            rgba: 0, 0, 0, 0.05
+        RoundedRectangle:
+            pos: self.x + 2, self.y - 2
+            size: self.width, self.height
+            radius: [8]
+        Color:
+            rgba: self.background_color
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [8]
+
+<OperationBlock>:
+    background_color: 0.3, 0.6, 0.9, 1
+    background_normal: ''
+    font_size: 24
+    font_name: 'Roboto'
+    bold: True
+    color: 1, 1, 1, 1
+    canvas.before:
+        Color:
+            rgba: 0, 0, 0, 0.1
+        RoundedRectangle:
+            pos: self.x + 1, self.y - 1
+            size: self.width, self.height
+            radius: [6]
+        Color:
+            rgba: self.background_color
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [6]
+
+<UndoBlock>:
+    background_color: 0.9, 0.6, 0.2, 1
+    background_normal: ''
+    text: 'Undo'
+    font_size: 18
+    font_name: 'Roboto'
+    bold: True
+    color: 1, 1, 1, 1
+    canvas.before:
+        Color:
+            rgba: 0, 0, 0, 0.1
+        RoundedRectangle:
+            pos: self.x + 1, self.y - 1
+            size: self.width, self.height
+            radius: [6]
+        Color:
+            rgba: self.background_color
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [6] 
