@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, validator, root_validator, constr, conint
 # Helper validators / types
 # ---------------------------
 
-RoomCode = constr(regex=r'^[A-Z0-9]{6}$')  # 6 uppercase alphanumeric characters
+RoomCode = constr(pattern=r'^[A-Z0-9]{4}$')  # 4 uppercase alphanumeric characters
 Username = constr(min_length=1, max_length=32)
 ExpressionStr = constr(min_length=1, max_length=512)
 
@@ -37,10 +37,32 @@ class RoomSettings(BaseModel):
     rounds: conint(ge=1, le=100) = Field(..., description="Number of rounds in the match")
     time_per_round_seconds: conint(ge=5, le=300) = Field(..., description="Seconds per round")
 
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {"rounds": 10, "time_per_round_seconds": 30}
         }
+    }
+
+
+class MVPRoomSettings(BaseModel):
+    """
+    Fixed MVP room settings: 10 rounds, 30 seconds per round, 3 second countdown, 6 second results.
+    """
+    rounds: Literal[10] = Field(10, description="Fixed 10 rounds for MVP")
+    time_per_round_seconds: Literal[30] = Field(30, description="Fixed 30 seconds per round for MVP")
+    countdown_seconds: Literal[3] = Field(3, description="Fixed 3 second countdown before each round")
+    results_display_seconds: Literal[6] = Field(6, description="Fixed 6 seconds to display round results")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "rounds": 10,
+                "time_per_round_seconds": 30,
+                "countdown_seconds": 3,
+                "results_display_seconds": 6
+            }
+        }
+    }
 
 
 class PlayerPublic(BaseModel):
@@ -50,8 +72,7 @@ class PlayerPublic(BaseModel):
     score: int = 0
     streak: int = 0
 
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 
 class PlayerInternal(PlayerPublic):
@@ -92,14 +113,35 @@ class RoomState(str):
     FINISHED = "FINISHED"
 
 
+class RoundPhase(str):
+    COUNTDOWN = "COUNTDOWN"
+    ACTIVE = "ACTIVE"
+    RESULTS = "RESULTS"
+
+
+class RoundState(BaseModel):
+    """Tracks the current round timing state."""
+    phase: Literal[RoundPhase.COUNTDOWN, RoundPhase.ACTIVE, RoundPhase.RESULTS]
+    phase_start_time: datetime
+    phase_end_time: datetime
+    round_start_time: Optional[datetime] = None
+    round_end_time: Optional[datetime] = None
+
+    _tz_phase_start = validator('phase_start_time', allow_reuse=True)(ensure_tzaware)
+    _tz_phase_end = validator('phase_end_time', allow_reuse=True)(ensure_tzaware)
+    _tz_round_start = validator('round_start_time', allow_reuse=True)(lambda v: ensure_tzaware(v) if v is not None else None)
+    _tz_round_end = validator('round_end_time', allow_reuse=True)(lambda v: ensure_tzaware(v) if v is not None else None)
+
+
 class Room(BaseModel):
     room_code: RoomCode
     host_player_id: UUID
-    settings: RoomSettings
+    settings: MVPRoomSettings = Field(default_factory=MVPRoomSettings)
     players: Dict[UUID, PlayerInternal] = Field(default_factory=dict)
     problems: List[Problem] = Field(default_factory=list)
     round_index: int = 0  # 0-based index into problems when running
     state: Literal[RoomState.LOBBY, RoomState.RUNNING, RoomState.FINISHED] = RoomState.LOBBY
+    current_round_state: Optional[RoundState] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_activity_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -109,6 +151,12 @@ class Room(BaseModel):
     @validator('players', pre=True)
     def ensure_players_is_dict(cls, v):
         return v or {}
+
+    @validator('players')
+    def max_four_players(cls, v):
+        if len(v) > 4:
+            raise ValueError("Room cannot have more than 4 players")
+        return v
 
 
 # ---------------------------
@@ -128,6 +176,9 @@ class SubmissionRecord(BaseModel):
     server_receive_time: Optional[datetime] = None
     accepted: bool = False
     reason: Optional[str] = None
+    time_left_at_submission: Optional[float] = Field(None, description="Seconds remaining when submitted")
+    speed_bonus_awarded: Optional[int] = Field(None, description="Speed bonus points awarded (0-5)")
+    points_awarded: Optional[int] = Field(None, description="Total points awarded for this submission")
 
     @validator('used_numbers')
     def used_numbers_len4(cls, v):
@@ -147,7 +198,21 @@ class PlayerScored(BaseModel):
     player_id: UUID
     username: Username
     points_gained: int
-    time_left: float  # seconds on server clock
+    base_points: int = Field(10, description="Base 10 points for correct answer")
+    speed_bonus: int = Field(0, description="Speed bonus 0-5 points based on time remaining")
+    time_left: float = Field(..., description="Seconds remaining when answer submitted")
+    time_submitted: datetime = Field(..., description="Server timestamp when answer was submitted")
+    submission_rank: int = Field(..., description="1-based rank among correct submissions this round")
+
+    _tz_time_submitted = validator('time_submitted', allow_reuse=True)(ensure_tzaware)
+
+    @validator('points_gained')
+    def points_gained_equals_base_plus_bonus(cls, v, values):
+        base = values.get('base_points', 10)
+        bonus = values.get('speed_bonus', 0)
+        if v != base + bonus:
+            raise ValueError("points_gained must equal base_points + speed_bonus")
+        return v
 
 class PlayerScoreUpdate(BaseModel):
     player_id: UUID
@@ -177,7 +242,7 @@ class ProblemPercentEntry(BaseModel):
 
 class RoomCreatePayload(BaseModel):
     username: Username
-    settings: RoomSettings
+    settings: MVPRoomSettings = Field(default_factory=MVPRoomSettings)
 
 
 class RoomJoinPayload(BaseModel):
@@ -249,7 +314,7 @@ class RoomCreatedPayload(BaseModel):
     room_code: RoomCode
     host_player_id: UUID
     session_token: str
-    settings: RoomSettings
+    settings: MVPRoomSettings
 
 
 class RoomCreatedMessage(BaseModel):
@@ -345,6 +410,27 @@ class GameEndMessage(BaseModel):
     payload: GameEndPayload
 
 
+class PlayerJoinedPayload(BaseModel):
+    player: PlayerPublic
+    total_players: conint(ge=1, le=4)
+
+
+class PlayerJoinedMessage(BaseModel):
+    type: Literal["player.joined"]
+    payload: PlayerJoinedPayload
+
+
+class PlayerLeftPayload(BaseModel):
+    player_id: UUID
+    username: Username
+    total_players: conint(ge=0, le=4)
+
+
+class PlayerLeftMessage(BaseModel):
+    type: Literal["player.left"]
+    payload: PlayerLeftPayload
+
+
 class ErrorPayload(BaseModel):
     code: str
     message: str
@@ -365,6 +451,8 @@ OutgoingWSMessage = Union[
     AnswerAckMessage,
     RoundEndMessage,
     GameEndMessage,
+    PlayerJoinedMessage,
+    PlayerLeftMessage,
     ErrorMessage,
 ]
 
