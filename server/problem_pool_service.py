@@ -169,7 +169,7 @@ class ProblemPoolService:
             "number_range": "1-13",
             "max_attempts_per_game": 10000
         }
-    
+    2
     def _get_best_solution(self, solutions: List[List]) -> List:
         """Get the best solution: first one without negative numbers, or last one if none"""
         if not solutions:

@@ -74,21 +74,6 @@ LOBBY → [host starts] → COUNTDOWN → ACTIVE → RESULTS → COUNTDOWN (next
 - Score tracking: base points (10) + speed bonus (0-5) per correct submission
 - One submission per player per round limitation
 
-#### 5. **Problem Pool Service**
-**Purpose**: Generate working 24-game problems on-demand for each game  
-**Dependencies**: 24-Game Solver (lib/solve_24.py)  
-**Key Responsibilities**:
-- Generate 10 unique, solvable problems per game dynamically
-- Ensure no duplicate problems within a single game (by number multiset)
-- Provide problem metadata (numbers, problem_id, canonical solution)
-- Use existing solver to validate each generated problem has a solution
-
-**Problem Generation Strategy**:
-- Generate problems on-demand when rooms are created
-- For each game, iteratively generate working problems until 10 unique ones found
-- Deduplication is per-game (not global) to maximize variety across games
-- Use single-player solver's "best" solution logic for canonical solutions
-
 #### 6. **Submission Processor**
 **Purpose**: Validate and score player answer submissions  
 **Dependencies**: Player Manager, 24-Game Solver  
