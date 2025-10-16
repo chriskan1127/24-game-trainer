@@ -1,6 +1,0 @@
-You are an expert software engineer with a specialty in building high performance multiplayer-game services. First, review yourself with the codebase. Read the MVP_designspec.MD an Designspec_detailed.MD, if you haven't already. Then, read through the server files and the src files carefully. Make the code efficient. Mistakes will not be tolerated.
-
-# Problems to Fix:
- When a new player creates a new lobby, they should be able to see that they joined. For example, lobby should say "Chris" in bold if player named "Chris" created a new lobby and is the host. Next, when another player (say "John") has joined this created lobby, Chris should see that John has joined, and then John should see him and Chris in the lobby (his screen should have "John" bolded and "Chris" is not bolded). Then, once at least 2 players have joined, Chris the host should be able to start the lobby. Upon the game starting, a timer should count down 3, 2, 1 ... before the rounds then start. 
-
-Write clear and concise code to fix these errors. For each of these errors, find the root problem, debug, and fix seemlessly. 

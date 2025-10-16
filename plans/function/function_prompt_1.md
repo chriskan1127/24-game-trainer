@@ -13,8 +13,8 @@ New function: After the end of each round, we want the solutions to each questio
 
 - Score is displayed as +10 even if players answer quickly enough to gain bonus points from time. The green value shows +10 no matter what, does not
 
-- Round Results page STILL NOT CENTERED. It seems like it is taking up too much space, it is left and corner. 
+- Round Results page STILL NOT CENTERED. It seems like it is taking up too much space, it is left and in the corner. Try all avenues to fix this issue. 
 
-- Disable undo after answer is submitted correctlyS
+- Disable undo after answer is submitted correctly.
 
 Write tests as necessary to check for completion of tasks. 
