@@ -8,6 +8,7 @@ import json
 import logging
 import sys
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set
 from uuid import UUID, uuid4
@@ -56,18 +57,6 @@ from submission_processor import SubmissionProcessor
 from message_broadcaster import MessageBroadcaster
 from timer_service import TimerService
 
-# FastAPI app
-app = FastAPI(title="24-Game Multiplayer Server", version="1.0.0")
-
-# Add CORS middleware for development
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # In production, specify allowed origins
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # Global service instances
 room_manager: Optional[RoomManager] = None
 game_state_manager: Optional[GameStateManager] = None
@@ -82,18 +71,22 @@ active_connections: Dict[str, WebSocket] = {}  # connection_id -> websocket
 player_connections: Dict[UUID, str] = {}  # player_id -> connection_id
 
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize all services on startup"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifespan context manager for startup and shutdown events
+    Replaces deprecated @app.on_event decorators
+    """
+    # Startup
     global room_manager, game_state_manager, player_manager, problem_pool_service
     global submission_processor, message_broadcaster, timer_service
-    
+
     logger.info("Starting 24-Game Multiplayer Server...")
-    
+
     # Initialize services in dependency order
     problem_pool_service = ProblemPoolService()
     await problem_pool_service.initialize()
-    
+
     message_broadcaster = MessageBroadcaster()
     room_manager = RoomManager(problem_pool_service)
     player_manager = PlayerManager()
@@ -102,31 +95,47 @@ async def startup_event():
     game_state_manager = GameStateManager(
         room_manager, player_manager, message_broadcaster, timer_service
     )
-    
+
     # Set up cross-service dependencies
     message_broadcaster.set_connection_manager(active_connections, player_connections)
     timer_service.set_game_state_manager(game_state_manager)
-    
+
     logger.info("All services initialized successfully")
 
+    yield  # Server runs here
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
+    # Shutdown
     logger.info("Shutting down 24-Game Multiplayer Server...")
-    
+
     # Cancel any running timers
     if timer_service:
         await timer_service.cleanup()
-    
+
     # Close all WebSocket connections
     for connection in active_connections.values():
         try:
             await connection.close()
         except:
             pass
-    
+
     logger.info("Server shutdown complete")
+
+
+# FastAPI app with lifespan
+app = FastAPI(
+    title="24-Game Multiplayer Server",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Add CORS middleware for development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify allowed origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.websocket("/ws/{room_code}/{player_id}")
@@ -274,6 +283,7 @@ async def handle_room_join(websocket: WebSocket, player_id: UUID, payload: dict)
                                 total_players=len(room.players)
                             )
                         ),
+                        room_manager,
                         exclude_player_id=player_id
                     )
         
@@ -377,6 +387,7 @@ async def handle_player_disconnect(player_id: UUID, room_code: str):
                                 total_players=len([p for p in room.players.values() if not p.disconnected_at])
                             )
                         ),
+                        room_manager,
                         exclude_player_id=player_id
                     )
         
@@ -418,6 +429,321 @@ async def get_server_stats():
         "total_players": sum(len(room.players) for room in room_manager.rooms.values()) if room_manager else 0
     }
     return stats
+
+
+# Pydantic models for REST API request/response validation
+from pydantic import BaseModel
+
+class CreateGameRequest(BaseModel):
+    host_username: str
+    target: int = 24
+    time_limit: int = 30
+    max_players: int = 10
+    points_to_win: int = 10
+
+class JoinGameRequest(BaseModel):
+    username: str
+
+# REST API endpoints for game management
+@app.post("/api/games/create")
+async def create_game_api(request_data: CreateGameRequest):
+    """
+    REST API endpoint to create a new game
+    Expected payload: {
+        "host_username": str,
+        "target": int (optional, default 24),
+        "time_limit": int (optional, default 30),
+        "max_players": int (optional, default 10),
+        "points_to_win": int (optional, default 10)
+    }
+    Returns: {
+        "success": bool,
+        "data": {
+            "game_code": str,
+            "host_id": str,
+            "session_token": str
+        },
+        "message": str (optional)
+    }
+    """
+    try:
+        host_username = request_data.host_username
+        if not host_username:
+            return {
+                "success": False,
+                "message": "host_username is required"
+            }
+
+        # Generate host player ID
+        host_player_id = uuid4()
+
+        # Create room through room manager
+        result = await room_manager.create_room(host_username, host_player_id)
+
+        logger.info(f"Game created via REST API: {result.room_code} by {host_username}")
+
+        # Broadcast room.created to the host if they're connected via WebSocket
+        if message_broadcaster and host_player_id in player_connections:
+            from pydantic_schemas import RoomCreatedMessage, RoomCreatedPayload, MVPRoomSettings
+            room_created_msg = RoomCreatedMessage(
+                type="room.created",
+                payload=RoomCreatedPayload(
+                    room_code=result.room_code,
+                    host_player_id=host_player_id,
+                    session_token=result.host_session_token,
+                    settings=MVPRoomSettings()
+                )
+            )
+            await message_broadcaster.send_to_player(host_player_id, room_created_msg)
+
+            # Also send room.joined message so host sees themselves in the lobby
+            room = room_manager.get_room(result.room_code)
+            if room:
+                room_joined_msg = RoomJoinedMessage(
+                    type="room.joined",
+                    payload=RoomJoinedPayload(
+                        room_code=result.room_code,
+                        player_id=host_player_id,
+                        session_token=result.host_session_token,
+                        players=[room_manager._to_public_player(p) for p in room.players.values()],
+                        state=room.state
+                    )
+                )
+                await message_broadcaster.send_to_player(host_player_id, room_joined_msg)
+
+        return {
+            "success": True,
+            "data": {
+                "game_code": result.room_code,
+                "host_id": str(result.host_player_id),
+                "session_token": result.host_session_token
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error creating game via REST API: {e}", exc_info=True)
+        return {
+            "success": False,
+            "message": f"Failed to create game: {str(e)}"
+        }
+
+
+@app.post("/api/games/{game_code}/join")
+async def join_game_api(game_code: str, request_data: JoinGameRequest):
+    """
+    REST API endpoint to join an existing game
+    Expected payload: {
+        "username": str
+    }
+    Returns: {
+        "success": bool,
+        "data": {
+            "player_id": str,
+            "session_token": str,
+            "game_code": str
+        },
+        "message": str (optional)
+    }
+    """
+    try:
+        username = request_data.username
+        if not username:
+            return {
+                "success": False,
+                "message": "username is required"
+            }
+
+        # Generate player ID
+        player_id = uuid4()
+
+        # Join room through room manager
+        result = await room_manager.join_room(
+            game_code.upper(),
+            username,
+            player_id
+        )
+
+        logger.info(f"Player {username} joined game {game_code} via REST API")
+
+        # Broadcast player.joined to all other players in the room
+        if message_broadcaster:
+            room = room_manager.get_room(game_code.upper())
+            if room:
+                player = room.players.get(player_id)
+                if player:
+                    from pydantic_schemas import PlayerJoinedMessage, PlayerJoinedPayload, PlayerPublic
+                    await message_broadcaster.broadcast_to_room_except(
+                        game_code.upper(),
+                        PlayerJoinedMessage(
+                            type="player.joined",
+                            payload=PlayerJoinedPayload(
+                                player=PlayerPublic(
+                                    player_id=player.player_id,
+                                    username=player.username,
+                                    score=player.score,
+                                    streak=player.streak
+                                ),
+                                total_players=len(room.players)
+                            )
+                        ),
+                        exclude_player_id=player_id,
+                        room_manager=room_manager
+                    )
+
+        return {
+            "success": True,
+            "data": {
+                "player_id": str(result.player_id),
+                "session_token": result.session_token,
+                "game_code": result.room_code
+            }
+        }
+
+    except ValueError as e:
+        logger.warning(f"Failed to join game {game_code}: {e}")
+        return {
+            "success": False,
+            "message": str(e)
+        }
+    except Exception as e:
+        logger.error(f"Error joining game {game_code} via REST API: {e}", exc_info=True)
+        return {
+            "success": False,
+            "message": f"Failed to join game: {str(e)}"
+        }
+
+
+@app.get("/api/games/{game_code}/status")
+async def get_game_status_api(game_code: str):
+    """
+    REST API endpoint to get the current status of a game
+    Returns: {
+        "success": bool,
+        "data": {
+            "game": {
+                "room_code": str,
+                "status": str,
+                "players": list,
+                "current_round": dict (optional)
+            }
+        },
+        "message": str (optional)
+    }
+    """
+    try:
+        # Get room from room manager
+        room = room_manager.get_room(game_code.upper())
+        if not room:
+            return {
+                "success": False,
+                "message": f"Game {game_code} not found"
+            }
+
+        # Build player list
+        players = []
+        for player_id, player in room.players.items():
+            players.append({
+                "player_id": str(player.player_id),
+                "username": player.username,
+                "score": player.score,
+                "streak": player.streak,
+                "is_host": player.player_id == room.host_player_id,
+                "is_ready": False  # MVP: no ready status yet
+            })
+
+        # Build game data
+        status_str = room.state.value if hasattr(room.state, 'value') else str(room.state).lower()
+        game_data = {
+            "room_code": room.room_code,
+            "status": status_str,
+            "players": players
+        }
+
+        # Add current round info if game is running
+        if status_str.upper() == "RUNNING" and hasattr(room, 'current_round_state') and room.current_round_state:
+            game_data["current_round"] = {
+                "round_number": room.round_index + 1,
+                "numbers": room.problems[room.round_index].numbers if room.round_index < len(room.problems) else [],
+                "time_remaining": 30  # TODO: Calculate actual time remaining
+            }
+
+        return {
+            "success": True,
+            "data": {
+                "game": game_data
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting game status for {game_code}: {e}", exc_info=True)
+        return {
+            "success": False,
+            "message": f"Failed to get game status: {str(e)}"
+        }
+
+
+@app.post("/api/games/{game_code}/start")
+async def start_game_api(game_code: str, player_id: str):
+    """
+    REST API endpoint to start a game (host only)
+    Query params:
+        player_id: str - The player ID attempting to start the game
+    Returns: {
+        "success": bool,
+        "message": str (optional)
+    }
+    """
+    try:
+        # Get room
+        room = room_manager.get_room(game_code.upper())
+        if not room:
+            return {
+                "success": False,
+                "message": f"Game {game_code} not found"
+            }
+
+        # Verify the player is the host
+        player_uuid = UUID(player_id)
+        if room.host_player_id != player_uuid:
+            return {
+                "success": False,
+                "message": "Only the host can start the game"
+            }
+
+        # Get the player's session token (from room)
+        player = room.players.get(player_uuid)
+        if not player:
+            return {
+                "success": False,
+                "message": "Player not found in room"
+            }
+
+        # Start the game through game state manager
+        await game_state_manager.start_game(
+            game_code.upper(),
+            player_uuid,
+            player.session_token
+        )
+
+        logger.info(f"Game {game_code} started via REST API by {player_id}")
+
+        return {
+            "success": True,
+            "message": "Game started successfully"
+        }
+
+    except ValueError as e:
+        logger.warning(f"Failed to start game {game_code}: {e}")
+        return {
+            "success": False,
+            "message": str(e)
+        }
+    except Exception as e:
+        logger.error(f"Error starting game {game_code} via REST API: {e}", exc_info=True)
+        return {
+            "success": False,
+            "message": f"Failed to start game: {str(e)}"
+        }
 
 
 if __name__ == "__main__":

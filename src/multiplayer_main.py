@@ -180,9 +180,14 @@ class LobbyScreen(Widget):
         self.is_host = is_host
         self.ws_client = None
         self.players = []
-        
+        self._state_fetched = False
+
         # Connect to WebSocket
         Clock.schedule_once(self.connect_websocket, 0.1)
+
+        # Fetch initial game state after widget is fully initialized
+        # Use a longer delay to ensure ids are available
+        Clock.schedule_once(self.initial_state_fetch, 1.0)
         
     def connect_websocket(self, dt):
         """Connect to the WebSocket server"""
@@ -196,60 +201,133 @@ class LobbyScreen(Widget):
     def handle_websocket_message(self, data: dict):
         """Handle incoming WebSocket messages"""
         msg_type = data.get("type")
-        
+
+        print(f"[DEBUG LobbyScreen] Received message type: {msg_type}")
+
         if msg_type == "game_state":
             self.update_game_state(data.get("game", {}))
         elif msg_type == "game_started":
             self.start_game_with_data(data.get("game", {}))
+        elif msg_type == "player.joined":
+            # A new player joined - refresh the game state
+            print(f"[DEBUG LobbyScreen] Player joined, refreshing game state")
+            self.refresh_game_state()
+        elif msg_type == "room.joined":
+            # We successfully joined - update our state
+            print(f"[DEBUG LobbyScreen] Room joined message received")
+            payload = data.get("payload", {})
+            players = payload.get("players", [])
+            state = payload.get("state", "LOBBY")
+            # Convert state enum to lowercase string if needed
+            if hasattr(state, 'value'):
+                state = state.value.lower()
+            elif isinstance(state, str):
+                state = state.lower()
+            print(f"[DEBUG LobbyScreen] Updating player list with {len(players)} players, state={state}")
+            self.update_player_list(players, state)
+        elif msg_type == "countdown.start":
+            # Countdown starting - show countdown
+            payload = data.get("payload", {})
+            self.show_countdown(payload.get("countdown_seconds", 3))
+        elif msg_type == "round.start":
+            # Round starting - transition to game
+            payload = data.get("payload", {})
+            numbers = payload.get("numbers", [1, 2, 3, 4])
+            round_index = payload.get("round_index", 0)
+            app = App.get_running_app()
+            app.root.show_game(self.game_code, self.player_name, self.player_id, numbers, round_index + 1, self.ws_client)
         elif msg_type == "error":
-            self.show_status(data.get("message", "Unknown error"))
+            error_payload = data.get("payload", {})
+            self.show_status(error_payload.get("message", "Unknown error"))
         elif msg_type == "player_ready_changed":
             # Refresh game state when player ready status changes
             self.refresh_game_state()
             
+    def initial_state_fetch(self, dt):
+        """Fetch initial game state when lobby loads"""
+        if not self._state_fetched:
+            self._state_fetched = True
+            print(f"[DEBUG] Fetching initial state for room {self.game_code}")
+            self.refresh_game_state()
+
     def refresh_game_state(self):
         """Refresh game state from server"""
         try:
+            print(f"[DEBUG] Fetching status for room {self.game_code}")
             response = requests.get(
                 f"{SERVER_BASE_URL}/api/games/{self.game_code}/status",
                 timeout=5
             )
+            print(f"[DEBUG] Status response: {response.status_code}")
             if response.status_code == 200:
                 data = response.json()
+                print(f"[DEBUG] Status data: {data}")
                 if data.get("success"):
                     self.update_game_state(data["data"]["game"])
+                else:
+                    print(f"[DEBUG] Status request unsuccessful: {data.get('message')}")
         except Exception as e:
-            print(f"Failed to refresh game state: {e}")
+            print(f"[ERROR] Failed to refresh game state: {e}")
             
     def update_game_state(self, game_data: dict):
         """Update the lobby with current game state"""
-        self.players = game_data.get("players", [])
-        
+        players = game_data.get("players", [])
+        status = game_data.get("status", "lobby")
+        self.update_player_list(players, status)
+
+    def update_player_list(self, players: list, status: str):
+        """Update the player list display"""
+        self.players = players
+        print(f"[DEBUG] Updating player list: {len(players)} players, status={status}")
+        print(f"[DEBUG] My player_id: {self.player_id}")
+
         # Update players list
         if hasattr(self, 'ids') and 'players_list' in self.ids:
+            print(f"[DEBUG] players_list widget found, clearing and adding {len(players)} players")
             self.ids.players_list.clear_widgets()
             for player in self.players:
                 from kivy.uix.label import Label
+
+                # Build player display text
+                username = player['username']
+                player_id_from_api = str(player.get("player_id"))  # Ensure string comparison
+                is_current_player = player_id_from_api == str(self.player_id)
                 status_text = " (Host)" if player.get("is_host") else ""
-                ready_text = " - Ready" if player.get("is_ready") else " - Not Ready"
+
+                print(f"[DEBUG] Player: {username}, API_ID: {player_id_from_api}, My_ID: {self.player_id}, Match: {is_current_player}")
+
+                # Use markup for bold formatting
+                if is_current_player:
+                    display_text = f"[b]{username}[/b]{status_text}"
+                else:
+                    display_text = f"{username}{status_text}"
+
                 player_label = Label(
-                    text=f"{player['username']}{status_text} - Score: {player.get('score', 0)}{ready_text}",
+                    text=display_text,
+                    markup=True,  # Enable markup for bold
                     size_hint_y=None,
                     height=40,
                     color=(0.2, 0.2, 0.3, 1),
-                    font_size=16
+                    font_size=18
                 )
                 self.ids.players_list.add_widget(player_label)
-        
+                print(f"[DEBUG] Added player label: {display_text}")
+        else:
+            print(f"[DEBUG] players_list widget NOT found! hasattr ids: {hasattr(self, 'ids')}")
+            if hasattr(self, 'ids'):
+                print(f"[DEBUG] Available ids: {list(self.ids.keys()) if self.ids else 'None'}")
+
         # Update start button (only show for host, and only if enough players)
         if hasattr(self, 'ids') and 'start_button' in self.ids:
-            can_start = (self.is_host and 
-                        len(self.players) >= 2 and 
-                        game_data.get("status") == "waiting")
+            # Check for LOBBY state (lowercase)
+            can_start = (self.is_host and
+                        len(self.players) >= 2 and
+                        status.lower() == "lobby")
             self.ids.start_button.disabled = not can_start
             if not self.is_host:
                 self.ids.start_button.text = "Waiting for host..."
                 self.ids.start_button.disabled = True
+            print(f"[DEBUG] Start button: can_start={can_start}, disabled={self.ids.start_button.disabled}")
             
     def start_game(self):
         """Start the game (host only)"""
@@ -282,6 +360,22 @@ class LobbyScreen(Widget):
         app = App.get_running_app()
         app.root.show_menu()
         
+    def show_countdown(self, countdown_seconds: int):
+        """Show countdown animation before game starts"""
+        self.countdown_value = countdown_seconds
+
+        def update_countdown(dt):
+            """Update countdown display"""
+            if self.countdown_value > 0:
+                self.show_status(f"Game starting in {self.countdown_value}...")
+                self.countdown_value -= 1
+                Clock.schedule_once(update_countdown, 1.0)
+            else:
+                self.show_status("Game starting!")
+
+        # Start the countdown
+        update_countdown(0)
+
     def show_status(self, message: str):
         """Show a status message"""
         if hasattr(self, 'ids') and 'status_label' in self.ids:

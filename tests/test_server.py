@@ -52,7 +52,9 @@ class TestRoomManager:
         result = await room_manager.create_room("TestHost", host_id)
         
         assert result.room_code
-        assert len(result.room_code) == 4
+        assert len(result.room_code) == 4, f"Room code should be 4 characters, got {len(result.room_code)}"
+        assert result.room_code.isupper(), f"Room code should be uppercase"
+        assert result.room_code.isalnum(), f"Room code should be alphanumeric"
         assert result.host_player_id == host_id
         assert result.host_session_token
         assert result.created_at
@@ -279,7 +281,9 @@ class TestWebSocketConnection:
                     assert "room_code" in payload
                     assert "host_player_id" in payload
                     assert "session_token" in payload
-                    assert len(payload["room_code"]) == 4
+                    room_code = payload["room_code"]
+                    assert len(room_code) == 4, f"Room code should be 4 characters, got {len(room_code)}"
+                    assert room_code.isupper() and room_code.isalnum(), f"Room code should be uppercase alphanumeric"
                     print(f"[OK] Room created successfully: {payload['room_code']}")
                 elif response_data["type"] == "error":
                     # Log the error but don't fail - server might be in a different state

@@ -38,9 +38,9 @@ class RoomManager:
         self.session_tokens: Dict[str, UUID] = {}  # session_token -> player_id
         
     def generate_room_code(self) -> str:
-        """Generate a unique 6-character room code"""
+        """Generate a unique 4-character room code"""
         while True:
-            code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
             if code not in self.rooms:
                 return code
     
