@@ -597,13 +597,13 @@ class NumberPanel(Widget):
         int2 = block_instance.int_value
         operation = self.parent.parent.ops_state
         output = 0
-        if operation is '+':
+        if operation == '+':
             output = int1 + int2
-        elif operation is '-':
+        elif operation == '-':
             output = int1 - int2
-        elif operation is 'x':
+        elif operation == 'x':
             output = int1 * int2
-        elif operation is '/':
+        elif operation == '/':
             output = '%.3f'%(int1 / int2)
         anim1 = Animation(x=block_instance.x, y=block_instance.y, duration=0.6)
         anim1.start(self.ids[block_id])
@@ -742,7 +742,7 @@ class Multiplayer24App(App):
     def build(self):
         # Load the multiplayer.kv file explicitly
         from kivy.lang import Builder
-        Builder.load_file('src/multiplayer.kv')
+        Builder.load_file('multiplayer.kv')
         return MainContainer()
         
     def on_stop(self):
