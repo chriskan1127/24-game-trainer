@@ -225,9 +225,8 @@
             pos_hint: {'center_x': 0.166, 'center_y': 0.92}
             text: "Time: " + str(self.time_remaining)
         Label:
-            score_number: 0
             id: score
-            text: "Score: " + str(self.score_number)
+            text: "Score: " + str(root.current_score)
             font_size: min(24, max(16, root.width * 0.025))
             font_name: 'Roboto'
             bold: True
@@ -250,13 +249,6 @@
             bold: True
             color: 0.5, 0.5, 0.6, 1
             pos_hint: {'center_x': 0.5, 'center_y': 0.05}
-        Label:
-            id: players_score_label
-            text: "Players: "
-            font_size: min(16, max(12, root.width * 0.016))
-            font_name: 'Roboto'
-            color: 0.5, 0.5, 0.6, 1
-            pos_hint: {'center_x': 0.5, 'center_y': 0.02}
 
 <OperationPanel>:
     undo: undo
@@ -378,4 +370,37 @@
         RoundedRectangle:
             pos: self.pos
             size: self.size
-            radius: [6] 
+            radius: [6]
+
+<RoundResultsScreen>:
+    canvas.before:
+        Color:
+            rgba: 0.05, 0.05, 0.15, 0.95
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    AnchorLayout:
+        anchor_x: 'center'
+        anchor_y: 'center'
+        size_hint: 1, 1
+        pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+        BoxLayout:
+            id: main_container
+            orientation: 'vertical'
+            spacing: 25
+            size_hint: None, None
+            size: min(root.width * 0.8, 600), min(root.height * 0.8, 500)
+            pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+            padding: 40
+            canvas.before:
+                Color:
+                    rgba: 0.15, 0.15, 0.25, 1
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [20]
+            BoxLayout:
+                id: content_container
+                orientation: 'vertical'
+                spacing: 15
+                size_hint: 1, 1 

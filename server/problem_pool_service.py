@@ -171,26 +171,33 @@ class ProblemPoolService:
         }
     2
     def _get_best_solution(self, solutions: List[List]) -> List:
-        """Get the best solution: first one without negative numbers, or last one if none"""
+        """Get the best solution: first one without fractions AND without negative numbers, or last one if none"""
         if not solutions:
             return []
-        
-        # Look for first solution without negative numbers
+
+        # Look for first solution without negative numbers AND without fractions
         for solution in solutions:
             has_negative = False
+            has_fraction = False
+
             for i in range(2, len(solution), 4):  # Check results (every 4th element starting from index 2)
                 try:
                     result = float(solution[i])
                     if result < 0:
                         has_negative = True
                         break
+                    # Check if result is a fraction (not a whole number)
+                    if result != int(result):
+                        has_fraction = True
+                        break
                 except (ValueError, IndexError):
                     continue
-            
-            if not has_negative:
+
+            # If solution has neither negative numbers nor fractions, use it
+            if not has_negative and not has_fraction:
                 return solution
-        
-        # If no solution without negative numbers, return the last one
+
+        # If no solution without both negative numbers and fractions, return the last one
         return solutions[-1]
     
     def _format_solution(self, solution_steps: List) -> str:
@@ -226,6 +233,18 @@ class ProblemPoolService:
         
         return "\n".join(formatted_lines)
     
+    def validate_numbers(self, numbers: List[int]) -> bool:
+        """Validate that numbers are in correct format (4 numbers, 1-13 range)"""
+        if not numbers or len(numbers) != 4:
+            return False
+        try:
+            for num in numbers:
+                if not isinstance(num, int) or num < 1 or num > 13:
+                    return False
+            return True
+        except Exception:
+            return False
+
     def validate_problem(self, numbers: List[int]) -> bool:
         """Validate that a set of numbers can form 24"""
         try:
@@ -233,7 +252,18 @@ class ProblemPoolService:
             return solver.is_valid_input()
         except Exception:
             return False
-    
+
+    def get_best_solution(self, numbers: List[int]) -> List:
+        """Get the best solution for a set of numbers (public wrapper)"""
+        try:
+            solver = Solution(numbers, target=24)
+            solver.find_all_solutions()
+            solutions = solver.get_all_solutions()
+            return self._get_best_solution(solutions)
+        except Exception as e:
+            logger.error(f"Error getting best solution for {numbers}: {e}")
+            return []
+
     def get_canonical_solution(self, numbers: List[int]) -> str:
         """Get the canonical solution for a set of numbers"""
         try:

@@ -153,14 +153,130 @@ class TestProblemPoolService:
     def test_get_best_solution(self):
         """Test getting the best solution from multiple solutions"""
         service = ProblemPoolService()
-        
+
         # Test with known problem
         numbers = [1, 1, 8, 8]
         solution = service.get_best_solution(numbers)
-        
+
         assert solution is not None
         assert len(solution) > 0
-        
+
         # Verify solution format (should be steps)
         # Format should be [operand1, operand2, result, operator, ...]
         assert len(solution) >= 4
+
+    def test_best_solution_avoids_fractions(self):
+        """Test that best solution prefers solutions without fractions"""
+        service = ProblemPoolService()
+
+        # Find solutions for a problem
+        numbers = [3, 3, 8, 8]  # Has solutions with and without fractions
+        solver = Solution(numbers, target=24)
+        solver.find_all_solutions()
+        all_solutions = solver.get_all_solutions()
+
+        if len(all_solutions) > 1:
+            best_solution = service._get_best_solution(all_solutions)
+
+            # Check that the best solution doesn't have fractions
+            has_fraction = False
+            for i in range(2, len(best_solution), 4):
+                try:
+                    result = float(best_solution[i])
+                    if result != int(result):
+                        has_fraction = True
+                        break
+                except (ValueError, IndexError):
+                    continue
+
+            # If there exists a solution without fractions, it should be chosen
+            # Check if any solution exists without fractions
+            solutions_without_fractions = []
+            for sol in all_solutions:
+                sol_has_fraction = False
+                for i in range(2, len(sol), 4):
+                    try:
+                        result = float(sol[i])
+                        if result != int(result):
+                            sol_has_fraction = True
+                            break
+                    except (ValueError, IndexError):
+                        continue
+                if not sol_has_fraction:
+                    solutions_without_fractions.append(sol)
+
+            # If there are solutions without fractions, best should be one of them
+            if solutions_without_fractions:
+                assert not has_fraction, "Best solution should not have fractions when alternatives exist"
+
+    def test_best_solution_avoids_negatives(self):
+        """Test that best solution prefers solutions without negative numbers"""
+        service = ProblemPoolService()
+
+        # Find solutions for a problem that might have negative intermediates
+        numbers = [1, 2, 3, 6]  # Some solutions might have negative intermediates
+        solver = Solution(numbers, target=24)
+        solver.find_all_solutions()
+        all_solutions = solver.get_all_solutions()
+
+        if len(all_solutions) > 1:
+            best_solution = service._get_best_solution(all_solutions)
+
+            # Check that the best solution doesn't have negative numbers
+            has_negative = False
+            for i in range(2, len(best_solution), 4):
+                try:
+                    result = float(best_solution[i])
+                    if result < 0:
+                        has_negative = True
+                        break
+                except (ValueError, IndexError):
+                    continue
+
+            # Check if any solution exists without negatives
+            solutions_without_negatives = []
+            for sol in all_solutions:
+                sol_has_negative = False
+                for i in range(2, len(sol), 4):
+                    try:
+                        result = float(sol[i])
+                        if result < 0:
+                            sol_has_negative = True
+                            break
+                    except (ValueError, IndexError):
+                        continue
+                if not sol_has_negative:
+                    solutions_without_negatives.append(sol)
+
+            # If there are solutions without negatives, best should be one of them
+            if solutions_without_negatives:
+                assert not has_negative, "Best solution should not have negatives when alternatives exist"
+
+    def test_best_solution_no_fractions_and_no_negatives(self):
+        """Test that best solution prefers solutions without both fractions and negatives"""
+        service = ProblemPoolService()
+
+        # Test with a problem known to have clean solutions
+        numbers = [4, 1, 8, 7]  # (8-4) * (7-1) = 4*6 = 24
+        solver = Solution(numbers, target=24)
+        solver.find_all_solutions()
+        all_solutions = solver.get_all_solutions()
+
+        best_solution = service._get_best_solution(all_solutions)
+
+        # Verify best solution has no fractions and no negatives
+        has_fraction = False
+        has_negative = False
+        for i in range(2, len(best_solution), 4):
+            try:
+                result = float(best_solution[i])
+                if result < 0:
+                    has_negative = True
+                if result != int(result):
+                    has_fraction = True
+            except (ValueError, IndexError):
+                continue
+
+        # For this problem, there should be clean solutions
+        assert not has_fraction, "Best solution should not have fractions"
+        assert not has_negative, "Best solution should not have negatives"

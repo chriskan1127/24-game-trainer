@@ -650,43 +650,18 @@ class RoundResultsScreen(Widget):
         """Create the results screen UI - clean, centered, and aesthetic"""
         from kivy.uix.label import Label
         from kivy.uix.boxlayout import BoxLayout
-        from kivy.uix.anchorlayout import AnchorLayout
-        from kivy.graphics import Color, Rectangle, RoundedRectangle
 
-        # Clear any existing widgets
-        self.clear_widgets()
+        # The canvas and layout structure is now defined in multiplayer.kv
+        # We just need to populate the content_container with widgets
 
-        # Full screen background
-        with self.canvas.before:
-            Color(0.05, 0.05, 0.15, 0.95)  # Semi-transparent dark background
-            self.full_bg_rect = Rectangle(size=self.size, pos=self.pos)
-            self.bind(size=self._update_full_bg, pos=self._update_full_bg)
-
-        # Center anchor layout - fill entire screen
-        center_anchor = AnchorLayout(
-            anchor_x='center',
-            anchor_y='center',
-            size_hint=(1, 1)
-        )
-
-        # Main results container - centered card
-        main_container = BoxLayout(
-            orientation='vertical',
-            spacing=25,
-            size_hint=(None, None),
-            size=(600, 500),
-            padding=40
-        )
-
-        # Add rounded background to container
-        with main_container.canvas.before:
-            Color(0.15, 0.15, 0.25, 1)  # Dark blue-gray background
-            self.bg_rect = RoundedRectangle(
-                size=main_container.size,
-                pos=main_container.pos,
-                radius=[20]
-            )
-            main_container.bind(size=self._update_bg, pos=self._update_bg)
+        # Get the content container from the .kv file
+        if not hasattr(self, 'ids') or 'content_container' not in self.ids:
+            # Fallback: if .kv didn't load properly, create minimal structure
+            print("Warning: .kv file structure not found, using fallback")
+            content_container = BoxLayout(orientation='vertical', spacing=15)
+            self.add_widget(content_container)
+        else:
+            content_container = self.ids.content_container
 
         # Round title - large and prominent
         round_title = Label(
@@ -697,7 +672,7 @@ class RoundResultsScreen(Widget):
             color=(1, 1, 1, 1),
             bold=True
         )
-        main_container.add_widget(round_title)
+        content_container.add_widget(round_title)
 
         # Personal results section
         personal_section = BoxLayout(orientation='vertical', size_hint_y=None, height='80dp', spacing=10)
@@ -732,7 +707,7 @@ class RoundResultsScreen(Widget):
         )
         personal_section.add_widget(score_label)
 
-        main_container.add_widget(personal_section)
+        content_container.add_widget(personal_section)
 
         # Solution section
         solution_label = Label(
@@ -744,7 +719,7 @@ class RoundResultsScreen(Widget):
             text_size=(520, None),
             halign='center'
         )
-        main_container.add_widget(solution_label)
+        content_container.add_widget(solution_label)
 
         # Leaderboard section
         leaderboard_title = Label(
@@ -755,7 +730,7 @@ class RoundResultsScreen(Widget):
             height='40dp',
             bold=True
         )
-        main_container.add_widget(leaderboard_title)
+        content_container.add_widget(leaderboard_title)
 
         # Leaderboard entries
         leaderboard_section = BoxLayout(orientation='vertical', size_hint_y=None, spacing=5)
@@ -792,7 +767,7 @@ class RoundResultsScreen(Widget):
                 )
                 leaderboard_section.add_widget(leaderboard_entry)
 
-        main_container.add_widget(leaderboard_section)
+        content_container.add_widget(leaderboard_section)
 
         # Next round info / countdown
         self.countdown_label = Label(
@@ -803,22 +778,7 @@ class RoundResultsScreen(Widget):
             height='40dp',
             bold=True
         )
-        main_container.add_widget(self.countdown_label)
-
-        center_anchor.add_widget(main_container)
-        self.add_widget(center_anchor)
-
-    def _update_bg(self, instance, value):
-        """Update background rectangle"""
-        if hasattr(self, 'bg_rect'):
-            self.bg_rect.pos = instance.pos
-            self.bg_rect.size = instance.size
-
-    def _update_full_bg(self, instance, value):
-        """Update full screen background rectangle"""
-        if hasattr(self, 'full_bg_rect'):
-            self.full_bg_rect.pos = instance.pos
-            self.full_bg_rect.size = instance.size
+        content_container.add_widget(self.countdown_label)
 
     def start_countdown(self, seconds: int):
         """Start countdown timer on the results screen"""
@@ -873,6 +833,7 @@ class MultiplayerGameScreen(Widget):
     scorelabel = ObjectProperty(None)
     targetlabel = ObjectProperty(None)
     round_num = NumericProperty(1)
+    current_score = NumericProperty(0)
 
     def __init__(self, room_code: str, player_name: str, player_id: UUID,
                  session_token: str, numbers: list, round_num: int,
@@ -892,7 +853,7 @@ class MultiplayerGameScreen(Widget):
         self.has_submitted = False
         self.round_start_time = None
         self.round_end_time = None
-        self.current_score = 0  # Initialize player's score
+        # current_score is now a NumericProperty, initialized to 0 by default
 
         # Listen for WebSocket messages
         self.ws_client.message_handler = self.handle_websocket_message
@@ -932,30 +893,37 @@ class MultiplayerGameScreen(Widget):
         return "\n".join(formatted_lines)
     
     def get_best_solution(self, numbers):
-        """Get the best solution: first one without negative numbers, or last one if none"""
+        """Get the best solution: first one without fractions AND without negative numbers, or last one if none"""
         solver = Solution([int(n) for n in numbers], target=24)
         solver.find_all_solutions()
         solutions = solver.get_all_solutions()
-        
+
         if not solutions:
             return []
-        
-        # Look for first solution without negative numbers
+
+        # Look for first solution without negative numbers AND without fractions
         for solution in solutions:
             has_negative = False
+            has_fraction = False
+
             for i in range(2, len(solution), 4):  # Check results (every 4th element starting from index 2)
                 try:
                     result = float(solution[i])
                     if result < 0:
                         has_negative = True
                         break
+                    # Check if result is a fraction (not a whole number)
+                    if result != int(result):
+                        has_fraction = True
+                        break
                 except (ValueError, IndexError):
                     continue
-            
-            if not has_negative:
+
+            # If solution has neither negative numbers nor fractions, use it
+            if not has_negative and not has_fraction:
                 return solution
-        
-        # If no solution without negative numbers, return the last one
+
+        # If no solution without both negative numbers and fractions, return the last one
         return solutions[-1]
     
     def validate_numbers(self, numbers):
@@ -979,7 +947,7 @@ class MultiplayerGameScreen(Widget):
         self.remaining_nums = 4
         self.main_numberpanel = ObjectProperty(None)
         new_numberpanel = NumberPanel(pos_hint = {'x': 0.18, 'y': 0.3})
-        
+
         self.ids.floatlayout.add_widget(new_numberpanel)
         self.main_numberpanel = new_numberpanel
         self.time_passed = 0
@@ -991,6 +959,9 @@ class MultiplayerGameScreen(Widget):
         if len(self.ops) > 0:
             self.ops.pop()
         self.operationpanel.operation_id = 'None'
+        # Re-enable undo button at the start of each round
+        if hasattr(self.operationpanel, 'undo'):
+            self.operationpanel.undo.disabled = False
         Clock.schedule_interval(self.timer_tick, 1)
     
     def out_of_time(self, instance, value):
@@ -1044,6 +1015,9 @@ class MultiplayerGameScreen(Widget):
         if accepted:
             self.update_display(f"Answer accepted! Time left: {time_left:.1f}s")
             self.has_submitted = True
+            # Disable undo button after successful submission
+            if hasattr(self, 'operationpanel') and self.operationpanel and hasattr(self.operationpanel, 'undo'):
+                self.operationpanel.undo.disabled = True
         else:
             self.update_display(f"Answer rejected: {reason}")
 
@@ -1091,8 +1065,9 @@ class MultiplayerGameScreen(Widget):
         )
 
         # Add the results screen to the main layout (full screen)
+        results_screen.size = self.ids.floatlayout.size  # Match parent size
+        results_screen.pos = self.ids.floatlayout.pos  # Match parent position
         results_screen.size_hint = (1, 1)  # Fill entire screen
-        results_screen.pos_hint = {'center_x': 0.5, 'center_y': 0.5}  # Center position
         self.ids.floatlayout.add_widget(results_screen)
 
         # Store reference for cleanup later
@@ -1102,7 +1077,7 @@ class MultiplayerGameScreen(Widget):
 
     def clear_game_ui(self):
         """Clear ALL game UI components to show clean results screen"""
-        # Remove numbers panel
+        # Remove numbers panel (widget removal prevents any interaction)
         if hasattr(self, 'main_numberpanel') and self.main_numberpanel:
             if self.main_numberpanel in self.ids.floatlayout.children:
                 self.ids.floatlayout.remove_widget(self.main_numberpanel)
@@ -1117,10 +1092,6 @@ class MultiplayerGameScreen(Widget):
             self.targetlabel.opacity = 0
         if hasattr(self, 'operationpanel') and self.operationpanel:
             self.operationpanel.opacity = 0
-
-        # Hide players score label if it exists
-        if hasattr(self, 'ids') and 'players_score_label' in self.ids:
-            self.ids.players_score_label.opacity = 0
 
         # Clear any existing results screen
         if hasattr(self, 'current_results_screen') and self.current_results_screen:
@@ -1142,10 +1113,6 @@ class MultiplayerGameScreen(Widget):
             self.targetlabel.opacity = 1
         if hasattr(self, 'operationpanel') and self.operationpanel:
             self.operationpanel.opacity = 1
-
-        # Show players score label if it exists
-        if hasattr(self, 'ids') and 'players_score_label' in self.ids:
-            self.ids.players_score_label.opacity = 1
 
     def handle_game_end(self, payload: dict):
         """Handle game end with final results"""
@@ -1203,25 +1170,22 @@ class MultiplayerGameScreen(Widget):
             
     def update_scores_from_list(self, updated_scores: list):
         """Update player scores display from score update list"""
-        if updated_scores and hasattr(self, 'ids') and 'players_score_label' in self.ids:
-            # Find our own score
+        if updated_scores:
+            # Find our own score and update the current_score property
             our_score = next(
                 (s.get('score', 0) for s in updated_scores if str(s.get('player_id')) == str(self.player_id)),
                 0
             )
-            score_text = f"Your Score: {our_score} | Round: {self.round_num}"
-            self.ids.players_score_label.text = score_text
-            
+            self.current_score = our_score
+
     def update_display(self, message: str):
-        """Update the display with a message"""
-        if hasattr(self, 'ids') and 'players_score_label' in self.ids:
-            self.ids.players_score_label.text = message
+        """Display a message (now using console output)"""
+        # Messages are now shown in console or via other mechanisms
+        print(f"Game Display: {message}")
 
     def get_current_score(self):
         """Get the current player's score"""
-        # This will be updated when we have access to score data
-        # For now, return 0 as a placeholder
-        return getattr(self, 'current_score', 0)
+        return self.current_score
             
     def submit_answer(self, expression: str, is_valid: bool):
         """Submit an answer to the server"""
@@ -1316,15 +1280,23 @@ class OperationBlock(Button, Widget):
         pass
     
     def on_release(self):
-        if self.activated:
-            self.remove_operation()
-        else:
-            if len(self.parent.parent.parent.parent.ops) < 1:
-                self.background_color = self.normal_color
+        # Safety check: ensure widget hierarchy is intact
+        try:
+            if not self.parent or not self.parent.parent or not self.parent.parent.parent or not self.parent.parent.parent.parent:
+                return  # Widget is being removed, ignore the event
+
+            if self.activated:
+                self.remove_operation()
             else:
-                if self.parent.parent.operation_id != 'None':
-                    self.parent.parent.ids[self.parent.parent.operation_id].remove_operation()
-                self.add_operation()
+                if len(self.parent.parent.parent.parent.ops) < 1:
+                    self.background_color = self.normal_color
+                else:
+                    if self.parent.parent.operation_id != 'None':
+                        self.parent.parent.ids[self.parent.parent.operation_id].remove_operation()
+                    self.add_operation()
+        except (AttributeError, ReferenceError):
+            # Widget hierarchy broken during round transition, safely ignore
+            return
 
 class UndoBlock(Button, Widget):
     def __init__(self, **kwargs):
@@ -1337,13 +1309,26 @@ class UndoBlock(Button, Widget):
         pass
     
     def on_release(self):
-        # Perform action without color change
-        if len(self.parent.parent.parent.parent.main_numberpanel.operation_list) > 0:
-            prev_state = self.parent.parent.parent.parent.main_numberpanel.operation_list.pop()
-            self.parent.parent.parent.parent.main_numberpanel.assign_numblock_vals(prev_state)
-            self.parent.parent.parent.parent.remaining_nums += 1 
-            if self.parent.parent.parent.parent.main_numberpanel.first_operation != "None":
-                self.parent.parent.parent.parent.main_numberpanel.remove_first_op()
+        # Safety check: ensure widget hierarchy is intact
+        try:
+            if not self.parent or not self.parent.parent or not self.parent.parent.parent or not self.parent.parent.parent.parent:
+                return  # Widget is being removed, ignore the event
+
+            # Check if main_numberpanel exists
+            game_screen = self.parent.parent.parent.parent
+            if not hasattr(game_screen, 'main_numberpanel') or not game_screen.main_numberpanel:
+                return  # Game is ending, ignore the event
+
+            # Perform action without color change
+            if len(game_screen.main_numberpanel.operation_list) > 0:
+                prev_state = game_screen.main_numberpanel.operation_list.pop()
+                game_screen.main_numberpanel.assign_numblock_vals(prev_state)
+                game_screen.remaining_nums += 1
+                if game_screen.main_numberpanel.first_operation != "None":
+                    game_screen.main_numberpanel.remove_first_op()
+        except (AttributeError, ReferenceError):
+            # Widget hierarchy broken during round transition, safely ignore
+            return
 
 
 class NumberPanel(Widget):
@@ -1490,22 +1475,31 @@ class NumberBlock(Button, Widget):
             self.size_hint_value = 0.41
 
     def on_release(self):
-        if not self.disabled:
-            self.size_hint_value = 0.45
-            if self.activated:
-                # If already activated, deactivate and return to normal color
-                self.remove_operation()
-            else:
-                if len(self.parent.parent.parent.parent.ops) < 1:
-                    # If no operations, activate this button (keep purple)
-                    self.add_operation()
-                elif self.parent.parent.parent.parent.ops_state == 'None':
-                    # If no operation selected, deactivate previous and activate this
-                    self.parent.parent.ids[self.parent.parent.first_operation].remove_operation()
-                    self.add_operation()
+        # Safety check: ensure widget hierarchy is intact
+        try:
+            if not self.disabled:
+                # Check parent chain exists
+                if not self.parent or not self.parent.parent or not self.parent.parent.parent or not self.parent.parent.parent.parent:
+                    return  # Widget is being removed, ignore the event
+
+                self.size_hint_value = 0.45
+                if self.activated:
+                    # If already activated, deactivate and return to normal color
+                    self.remove_operation()
                 else:
-                    # Perform computation, color will be set by compute method
-                    self.parent.parent.compute(self)
+                    if len(self.parent.parent.parent.parent.ops) < 1:
+                        # If no operations, activate this button (keep purple)
+                        self.add_operation()
+                    elif self.parent.parent.parent.parent.ops_state == 'None':
+                        # If no operation selected, deactivate previous and activate this
+                        self.parent.parent.ids[self.parent.parent.first_operation].remove_operation()
+                        self.add_operation()
+                    else:
+                        # Perform computation, color will be set by compute method
+                        self.parent.parent.compute(self)
+        except (AttributeError, ReferenceError):
+            # Widget hierarchy broken during round transition, safely ignore
+            return
 
 class MainContainer(FloatLayout):
     def __init__(self, **kwargs):
