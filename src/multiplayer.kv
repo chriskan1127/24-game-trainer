@@ -379,28 +379,86 @@
         Rectangle:
             pos: self.pos
             size: self.size
-    AnchorLayout:
-        anchor_x: 'center'
-        anchor_y: 'center'
-        size_hint: 1, 1
+
+    BoxLayout:
+        orientation: 'vertical'
+        spacing: 15
+        size_hint: None, None
+        size: min(root.width * 0.8, 600), min(root.height * 0.8, 500)
         pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+        padding: 40
+
+        canvas.before:
+            Color:
+                rgba: 0.15, 0.15, 0.25, 1
+            RoundedRectangle:
+                pos: self.pos
+                size: self.size
+                radius: [20]
+
+        # Round title
+        Label:
+            text: f"Round {root.round_index + 1} Results"
+            font_size: '32sp'
+            color: 1, 1, 1, 1
+            bold: True
+            size_hint_y: None
+            height: '60dp'
+
+        # Personal result section
         BoxLayout:
-            id: main_container
             orientation: 'vertical'
-            spacing: 25
-            size_hint: None, None
-            size: min(root.width * 0.8, 600), min(root.height * 0.8, 500)
-            pos_hint: {'center_x': 0.5, 'center_y': 0.5}
-            padding: 40
-            canvas.before:
-                Color:
-                    rgba: 0.15, 0.15, 0.25, 1
-                RoundedRectangle:
-                    pos: self.pos
-                    size: self.size
-                    radius: [20]
-            BoxLayout:
-                id: content_container
-                orientation: 'vertical'
-                spacing: 15
-                size_hint: 1, 1 
+            size_hint_y: None
+            height: '80dp'
+            spacing: 10
+
+            Label:
+                text: root.result_text
+                font_size: '20sp'
+                color: root.result_color
+                bold: True
+                size_hint_y: None
+                height: '40dp'
+
+            Label:
+                text: f"Your Score: {root.current_score}"
+                font_size: '18sp'
+                color: 0.9, 0.9, 1, 1
+                size_hint_y: None
+                height: '30dp'
+
+        # Solution
+        Label:
+            text: f"Solution: {root.canonical_solution}"
+            font_size: '18sp'
+            color: 0.7, 0.9, 1, 1
+            size_hint_y: None
+            height: '50dp'
+            halign: 'center'
+
+        # Leaderboard title
+        Label:
+            text: "Leaderboard"
+            font_size: '22sp'
+            color: 1, 1, 1, 1
+            bold: True
+            size_hint_y: None
+            height: '40dp'
+
+        # Leaderboard entries (populated dynamically)
+        BoxLayout:
+            id: leaderboard_container
+            orientation: 'vertical'
+            size_hint_y: None
+            height: '150dp'
+            spacing: 5
+
+        # Countdown label
+        Label:
+            id: countdown_label
+            text: "Next round starting soon..."
+            font_size: '18sp'
+            color: 0.8, 0.9, 1, 1
+            bold: True
+            size_hint_y: None
+            height: '40dp'

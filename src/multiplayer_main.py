@@ -620,165 +620,80 @@ class LobbyScreen(Widget):
             self.ids.status_label.text = message
         print(f"Lobby Status: {message}")
 
-#Note about the code: For Numberpanel and OperationPanel, the floatlayout is within the widget. 
+#Note about the code: For Numberpanel and OperationPanel, the floatlayout is within the widget.
 #Thus, use self.parent.parent to access outermost layer
 
 class RoundResultsScreen(Widget):
     """Dedicated screen to show round results, solution, and leaderboard"""
 
+    # Define Kivy properties for KV bindings
+    round_index = NumericProperty(0)
+    canonical_solution = StringProperty('')
+    points_earned = NumericProperty(0)
+    current_score = NumericProperty(0)
+    result_text = StringProperty('')
+    result_color = ListProperty([1, 1, 1, 1])
+
     def __init__(self, round_index: int, canonical_solution: str, players_correct: list,
                  leaderboard: list, current_player_id: UUID, points_earned: int = 0,
                  current_score: int = 0, **kwargs):
-        super().__init__(**kwargs)
-        self.round_index = round_index
-        self.canonical_solution = canonical_solution
+
+        # Store data that needs to be accessed before super().__init__
         self.players_correct = players_correct
         self.leaderboard = leaderboard
         self.current_player_id = current_player_id
-        self.points_earned = points_earned
-        self.current_score = current_score
+
+        # Calculate result text and color before calling super().__init__
+        player_correct = any(str(p.get('player_id')) == str(current_player_id)
+                           for p in players_correct)
+
+        # Set property values in kwargs so they're available during KV application
+        kwargs['round_index'] = round_index
+        kwargs['canonical_solution'] = canonical_solution
+        kwargs['points_earned'] = points_earned
+        kwargs['current_score'] = current_score
+
+        if player_correct:
+            kwargs['result_text'] = f"You got it correct! +{points_earned} points"
+            kwargs['result_color'] = [0.2, 0.8, 0.2, 1]
+        else:
+            kwargs['result_text'] = "You didn't solve this round"
+            kwargs['result_color'] = [0.9, 0.6, 0.2, 1]
+
+        super().__init__(**kwargs)
 
         # Countdown state
         self.countdown_active = False
         self.countdown_seconds = 0
-        self.countdown_label = None
 
-        # Create the UI dynamically
-        self.create_results_ui()
+        # Populate dynamic leaderboard after KV is loaded
+        Clock.schedule_once(lambda dt: self.populate_leaderboard(), 0)
 
-    def create_results_ui(self):
-        """Create the results screen UI - clean, centered, and aesthetic"""
+    def populate_leaderboard(self):
+        """Populate the leaderboard with player entries"""
         from kivy.uix.label import Label
-        from kivy.uix.boxlayout import BoxLayout
 
-        # The canvas and layout structure is now defined in multiplayer.kv
-        # We just need to populate the content_container with widgets
+        if not hasattr(self, 'ids') or 'leaderboard_container' not in self.ids:
+            return
 
-        # Get the content container from the .kv file
-        if not hasattr(self, 'ids') or 'content_container' not in self.ids:
-            # Fallback: if .kv didn't load properly, create minimal structure
-            print("Warning: .kv file structure not found, using fallback")
-            content_container = BoxLayout(orientation='vertical', spacing=15)
-            self.add_widget(content_container)
-        else:
-            content_container = self.ids.content_container
+        leaderboard_container = self.ids.leaderboard_container
+        leaderboard_container.clear_widgets()
 
-        # Round title - large and prominent
-        round_title = Label(
-            text=f"Round {self.round_index + 1} Results",
-            font_size='32sp',
-            size_hint_y=None,
-            height='60dp',
-            color=(1, 1, 1, 1),
-            bold=True
-        )
-        content_container.add_widget(round_title)
-
-        # Personal results section
-        personal_section = BoxLayout(orientation='vertical', size_hint_y=None, height='80dp', spacing=10)
-
-        # Check if current player got it correct
-        player_correct = any(str(p.get('player_id')) == str(self.current_player_id) for p in self.players_correct)
-
-        if player_correct:
-            result_text = f"You got it correct! +{self.points_earned} points"
-            result_color = (0.2, 0.8, 0.2, 1)  # Green
-        else:
-            result_text = "You didn't solve this round"
-            result_color = (0.9, 0.6, 0.2, 1)  # Orange
-
-        result_label = Label(
-            text=result_text,
-            font_size='20sp',
-            color=result_color,
-            size_hint_y=None,
-            height='40dp',
-            bold=True
-        )
-        personal_section.add_widget(result_label)
-
-        # Current score
-        score_label = Label(
-            text=f"Your Score: {self.current_score}",
-            font_size='18sp',
-            color=(0.9, 0.9, 1, 1),
-            size_hint_y=None,
-            height='30dp'
-        )
-        personal_section.add_widget(score_label)
-
-        content_container.add_widget(personal_section)
-
-        # Solution section
-        solution_label = Label(
-            text=f"Solution: {self.canonical_solution}",
-            font_size='18sp',
-            color=(0.7, 0.9, 1, 1),  # Light blue
-            size_hint_y=None,
-            height='50dp',
-            text_size=(520, None),
-            halign='center'
-        )
-        content_container.add_widget(solution_label)
-
-        # Leaderboard section
-        leaderboard_title = Label(
-            text="Leaderboard",
-            font_size='22sp',
-            color=(1, 1, 1, 1),
-            size_hint_y=None,
-            height='40dp',
-            bold=True
-        )
-        content_container.add_widget(leaderboard_title)
-
-        # Leaderboard entries
-        leaderboard_section = BoxLayout(orientation='vertical', size_hint_y=None, spacing=5)
-
-        # Calculate dynamic height based on number of players
-        max_players_to_show = min(5, len(self.leaderboard))
-        leaderboard_section.height = max_players_to_show * 30
-
-        for i in range(max_players_to_show):
-            if i < len(self.leaderboard):
-                entry = self.leaderboard[i]
-                player_id_str = str(entry.get('player_id'))
-                username = entry.get('username', f"Player {player_id_str[:8]}")
-                score = entry.get('score', 0)
-
-                # Highlight current player
-                if player_id_str == str(self.current_player_id):
-                    username += " (You)"
-                    color = (1, 0.8, 0.2, 1)  # Gold/Yellow
-                    font_size = '16sp'
-                    bold = True
-                else:
-                    color = (0.9, 0.9, 0.9, 1)  # Light gray
-                    font_size = '16sp'
-                    bold = False
-
-                leaderboard_entry = Label(
-                    text=f"{i + 1}. {username}: {score} pts",
-                    font_size=font_size,
-                    color=color,
-                    size_hint_y=None,
-                    height='25dp',
-                    bold=bold
-                )
-                leaderboard_section.add_widget(leaderboard_entry)
-
-        content_container.add_widget(leaderboard_section)
-
-        # Next round info / countdown
-        self.countdown_label = Label(
-            text="Next round starting soon...",
-            font_size='18sp',
-            color=(0.8, 0.9, 1, 1),
-            size_hint_y=None,
-            height='40dp',
-            bold=True
-        )
-        content_container.add_widget(self.countdown_label)
+        for i, entry in enumerate(self.leaderboard[:5]):
+            player_id = str(entry.get('player_id'))
+            username = entry.get('username', f"Player {player_id[:8]}")
+            score = entry.get('score', 0)
+            is_me = player_id == str(self.current_player_id)
+            color = (1, 0.8, 0.2, 1) if is_me else (0.9, 0.9, 0.9, 1)
+            label_text = f"{i + 1}. {username}{' (You)' if is_me else ''}: {score} pts"
+            leaderboard_container.add_widget(Label(
+                text=label_text,
+                font_size='16sp',
+                color=color,
+                bold=is_me,
+                size_hint_y=None,
+                height='25dp'
+            ))
 
     def start_countdown(self, seconds: int):
         """Start countdown timer on the results screen"""
@@ -809,11 +724,11 @@ class RoundResultsScreen(Widget):
 
     def update_countdown_display(self):
         """Update the countdown label text"""
-        if self.countdown_label and self.countdown_active:
+        if hasattr(self, 'ids') and 'countdown_label' in self.ids and self.countdown_active:
             if self.countdown_seconds > 0:
-                self.countdown_label.text = f"Next round in {self.countdown_seconds}..."
+                self.ids.countdown_label.text = f"Next round in {self.countdown_seconds}..."
             else:
-                self.countdown_label.text = "Starting next round..."
+                self.ids.countdown_label.text = "Starting next round..."
 
     def stop_countdown(self):
         """Stop the countdown timer"""
