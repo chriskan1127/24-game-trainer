@@ -6,7 +6,11 @@
       "Bash(mkdir:*)",
       "Bash(python3 -m pytest:*)",
       "Bash(find:*)",
-      "Bash(py -m pytest:*)"
+      "Bash(py -m pytest:*)",
+      "Bash(where:*)",
+      "Bash(py:*)",
+      "Read(//c/Users/chris/miniconda3/envs/24-game/**)",
+      "Bash(/c/Users/chris/miniconda3/envs/24-game/python.exe:*)"
     ],
     "deny": [],
     "ask": []

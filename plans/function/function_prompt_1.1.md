@@ -1,20 +1,11 @@
+You are an expert software engineer and game designer. First, review the code base if you have not already. Follow the below instructions to fix the following issues. Write clear and concise code to fix these errors. For each of these errors, find the root problem, debug, and fix seemlessly. Make the code efficient. Mistakes will not be tolerated. 
+
 # Details to Fix:
 
 - When the round ends, and we go to round results screen, before the next round starts, we should unfreeze all controls again. Thus, all buttons should be usable prior to next round starting (for example, while we are on round results screen)
 
-- When attempting to fix the Round Results Screen, or any frontend modifications for that matter, make changes in multiplayer.kv file to adjust its frontend properties. That should be the best fix to truly center the screen. If stuck, look at surrounding code in the .kv files for tips on how to achieve this properly. In fact, try to move frontend defining components into the multiplayer.kv file for simplicity and better control. An example would be this portion:
-    from kivy.uix.label import Label
-        from kivy.uix.boxlayout import BoxLayout
-        from kivy.uix.anchorlayout import AnchorLayout
-        from kivy.graphics import Color, Rectangle, RoundedRectangle
+- Leaderboard should populate starting end of Round 1, even if nobody scores any points.
 
-        # Clear any existing widgets
-        self.clear_widgets()
+- Currently, Round Results page is not properly displaying the scores. When a players get a question right, the score is properly updated and logged in the servers, but is not being shown in the RoundResultsScreen. Make sure this screen is pulling the proper data from the server.
 
-        # Full screen background
-        with self.canvas.before:
-            Color(0.05, 0.05, 0.15, 0.95)  # Semi-transparent dark background
-            self.full_bg_rect = Rectangle(size=self.size, pos=self.pos)
-            self.bind(size=self._update_full_bg, pos=self._update_full_bg)
-Remember, you are an expert!
-
+Write tests as necessary to check for completion of tasks. 

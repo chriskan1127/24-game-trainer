@@ -344,7 +344,11 @@ async def handle_answer_submit(websocket: WebSocket, player_id: UUID, payload: d
             client_timestamp=client_timestamp,
             room_manager=room_manager
         )
-        
+
+        # Record submission in game state manager for use in round results
+        if result and result.accepted:
+            game_state_manager.record_submission(room_code, round_index, result)
+
         # Send acknowledgment
         response = AnswerAckMessage(
             type="answer.ack",
@@ -356,7 +360,7 @@ async def handle_answer_submit(websocket: WebSocket, player_id: UUID, payload: d
                 reason=result.reason if result else "Submission failed"
             )
         )
-        
+
         await websocket.send_text(response.json())
         logger.info(f"Answer submitted by player {player_id} in room {room_code}: {result.accepted if result else False}")
         

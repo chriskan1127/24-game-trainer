@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Literal, Union, Any
 from uuid import UUID, uuid4
 from datetime import datetime, timezone
-from pydantic import BaseModel, Field, validator, root_validator, constr, conint, PositiveInt
+from pydantic import BaseModel, Field, validator, model_validator, constr, conint, PositiveInt
 
 
 # ---------------------------
@@ -206,13 +206,15 @@ class PlayerScored(BaseModel):
 
     _tz_time_submitted = validator('time_submitted', allow_reuse=True)(ensure_tzaware)
 
-    @validator('points_gained')
-    def points_gained_equals_base_plus_bonus(cls, v, values):
-        base = values.get('base_points', 10)
-        bonus = values.get('speed_bonus', 0)
-        if v != base + bonus:
-            raise ValueError("points_gained must equal base_points + speed_bonus")
-        return v
+    @model_validator(mode='after')
+    def validate_points(self):
+        """Validate that points_gained equals base_points + speed_bonus"""
+        if self.points_gained != self.base_points + self.speed_bonus:
+            raise ValueError(
+                f"points_gained must equal base_points + speed_bonus "
+                f"(got {self.points_gained}, expected {self.base_points} + {self.speed_bonus} = {self.base_points + self.speed_bonus})"
+            )
+        return self
 
 class PlayerScoreUpdate(BaseModel):
     player_id: UUID
@@ -392,6 +394,7 @@ class RoundEndPayload(BaseModel):
     canonical_solution: Optional[ExpressionStr]
     players_correct: List[PlayerScored] = Field(default_factory=list)
     updated_scores: List[PlayerScoreUpdate] = Field(default_factory=list)
+    leaderboard: List[LeaderboardEntry] = Field(default_factory=list)
 
 
 class RoundEndMessage(BaseModel):

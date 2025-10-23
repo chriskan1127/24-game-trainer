@@ -874,9 +874,18 @@ class MultiplayerGameScreen(Widget):
         if len(self.ops) > 0:
             self.ops.pop()
         self.operationpanel.operation_id = 'None'
-        # Re-enable undo button at the start of each round
+
+        # Reset ALL operation buttons to their initial state
         if hasattr(self.operationpanel, 'undo'):
             self.operationpanel.undo.disabled = False
+        # Reset all operation buttons (+, -, x, /) to unselected state
+        for button_id in ['add', 'subtract', 'multiply', 'divide']:
+            if hasattr(self.operationpanel.ids, button_id):
+                button = self.operationpanel.ids[button_id]
+                if button and hasattr(button, 'activated'):
+                    button.activated = False
+                    button.background_color = button.normal_color
+
         Clock.schedule_interval(self.timer_tick, 1)
     
     def out_of_time(self, instance, value):

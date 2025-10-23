@@ -33,12 +33,14 @@ logger = logging.getLogger(__name__)
 
 class GameStateManager:
     """Manages game flow and state transitions"""
-    
+
     def __init__(self, room_manager, player_manager, message_broadcaster, timer_service):
         self.room_manager = room_manager
         self.player_manager = player_manager
         self.message_broadcaster = message_broadcaster
         self.timer_service = timer_service
+        # Track submissions by room and round: {room_code: {round_index: [SubmissionRecord]}}
+        self.round_submissions = {}
         
     async def start_game(self, room_code: str, host_player_id: UUID, session_token: str):
         """Start a game in the specified room (host only)"""
@@ -72,18 +74,26 @@ class GameStateManager:
         
         logger.info(f"Game started in room {room_code} by host {host_player_id}")
     
+    def record_submission(self, room_code: str, round_index: int, submission):
+        """Record a submission for later use in round results"""
+        if room_code not in self.round_submissions:
+            self.round_submissions[room_code] = {}
+        if round_index not in self.round_submissions[room_code]:
+            self.round_submissions[room_code][round_index] = []
+        self.round_submissions[room_code][round_index].append(submission)
+
     async def start_round(self, room_code: str):
         """Start a new round with countdown"""
         room = self.room_manager.get_room(room_code)
         if not room:
             logger.error(f"Cannot start round - room {room_code} not found")
             return
-        
+
         if room.round_index >= len(room.problems):
             # Game is finished
             await self.end_game(room_code)
             return
-        
+
         # Reset round scoring
         self.player_manager.reset_round_scoring(room_code)
         
@@ -180,27 +190,68 @@ class GameStateManager:
         
         # Get current problem and solution
         current_problem = room.problems[room.round_index]
-        
+
+        # Get submissions for this round
+        round_submissions_list = []
+        if room_code in self.round_submissions and room.round_index in self.round_submissions[room_code]:
+            round_submissions_list = self.round_submissions[room_code][room.round_index]
+
         # Generate list of players who scored this round
         players_correct = []
         for player_id, player in room.players.items():
             if self.player_manager.has_player_scored_this_round(room_code, player_id):
-                # Find the submission to get timing info
-                # For now, we'll create a basic PlayerScored entry
-                players_correct.append(PlayerScored(
-                    player_id=player_id,
-                    username=player.username,
-                    points_gained=10,  # This should come from actual submission
-                    base_points=10,
-                    speed_bonus=0,  # This should come from actual submission
-                    time_left=15.0,  # This should come from actual submission
-                    time_submitted=now,
-                    submission_rank=len(players_correct) + 1
-                ))
+                # Find the submission for this player
+                submission = next((s for s in round_submissions_list if s.player_id == player_id and s.accepted), None)
+
+                if submission and submission.points_awarded is not None:
+                    # Use actual submission data
+                    # base_points is always 10 (constant defined in player_manager.calculate_score)
+                    base_points = 10
+                    speed_bonus = submission.speed_bonus_awarded if submission.speed_bonus_awarded is not None else 0
+
+                    # Ensure points_awarded matches base_points + speed_bonus for validation
+                    # If there's a mismatch, recalculate points_gained from components
+                    expected_total = base_points + speed_bonus
+                    points_gained = expected_total
+
+                    if submission.points_awarded != expected_total:
+                        logger.warning(
+                            f"Points mismatch for player {player_id} in round {room.round_index}: "
+                            f"submission.points_awarded={submission.points_awarded} but "
+                            f"base_points ({base_points}) + speed_bonus ({speed_bonus}) = {expected_total}. "
+                            f"Using calculated total {expected_total}."
+                        )
+
+                    players_correct.append(PlayerScored(
+                        player_id=player_id,
+                        username=player.username,
+                        points_gained=points_gained,
+                        base_points=base_points,
+                        speed_bonus=speed_bonus,
+                        time_left=submission.time_left_at_submission or 0.0,
+                        time_submitted=submission.server_receive_time or now,
+                        submission_rank=len(players_correct) + 1
+                    ))
+                else:
+                    # Fallback if submission not found (shouldn't happen)
+                    logger.warning(f"No submission found for player {player_id} who scored in round {room.round_index}")
+                    players_correct.append(PlayerScored(
+                        player_id=player_id,
+                        username=player.username,
+                        points_gained=10,
+                        base_points=10,
+                        speed_bonus=0,
+                        time_left=0.0,
+                        time_submitted=now,
+                        submission_rank=len(players_correct) + 1
+                    ))
         
         # Get updated scores
         updated_scores = self.player_manager.get_score_updates(room.players)
-        
+
+        # Get current leaderboard
+        leaderboard = self.player_manager.get_leaderboard(room.players)
+
         # Broadcast round end
         round_end_message = RoundEndMessage(
             type="round.end",
@@ -209,7 +260,8 @@ class GameStateManager:
                 problem_id=current_problem.problem_id,
                 canonical_solution=current_problem.canonical_solution,
                 players_correct=players_correct,
-                updated_scores=updated_scores
+                updated_scores=updated_scores,
+                leaderboard=leaderboard
             )
         )
         
